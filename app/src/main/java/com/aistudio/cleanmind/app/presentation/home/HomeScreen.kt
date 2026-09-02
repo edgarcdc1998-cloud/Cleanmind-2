@@ -84,6 +84,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aistudio.cleanmind.app.R
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
+import com.aistudio.cleanmind.app.presentation.components.RecommendationsSection
 import com.aistudio.cleanmind.app.presentation.theme.ElegantDarkBackground
 import com.aistudio.cleanmind.app.presentation.theme.ElegantDarkOnPrimary
 import com.aistudio.cleanmind.app.presentation.theme.ElegantDarkPrimary
@@ -292,6 +293,13 @@ fun HomeScreen(
 
                         is AnalysisStatus.Saved -> {
                             AnalysisResultsSection(uiState = uiState, isSaved = true)
+                            RecommendationsSection(
+                                summary = uiState.recommendationsSummary,
+                                recommendations = uiState.filteredRecommendations,
+                                selectedFilter = uiState.selectedFilter,
+                                onFilterSelected = { filter -> viewModel.onFilterSelected(filter) },
+                                modifier = Modifier.testTag("recommendations_section")
+                            )
                             PrivacyBadge(modifier = Modifier.testTag("privacy_badge"))
                         }
 
@@ -305,6 +313,13 @@ fun HomeScreen(
 
                         is AnalysisStatus.Success -> {
                             AnalysisResultsSection(uiState = uiState, isSaved = false)
+                            RecommendationsSection(
+                                summary = uiState.recommendationsSummary,
+                                recommendations = uiState.filteredRecommendations,
+                                selectedFilter = uiState.selectedFilter,
+                                onFilterSelected = { filter -> viewModel.onFilterSelected(filter) },
+                                modifier = Modifier.testTag("recommendations_section")
+                            )
                             PrivacyBadge(modifier = Modifier.testTag("privacy_badge"))
                         }
 

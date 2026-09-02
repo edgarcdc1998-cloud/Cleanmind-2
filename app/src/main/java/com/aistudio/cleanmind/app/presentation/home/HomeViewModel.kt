@@ -9,12 +9,18 @@ import com.aistudio.cleanmind.app.R
 import com.aistudio.cleanmind.app.data.datasource.MediaStoreDataSourceImpl
 import com.aistudio.cleanmind.app.data.local.database.CleanMindDatabase
 import com.aistudio.cleanmind.app.data.repository.AnalysisHistoryRepositoryImpl
+import com.aistudio.cleanmind.app.data.repository.FileHashRepositoryImpl
 import com.aistudio.cleanmind.app.data.repository.StorageRepositoryImpl
 import com.aistudio.cleanmind.app.domain.model.CategorySummary
 import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
 import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
+import com.aistudio.cleanmind.app.domain.usecase.FindDuplicateFilesUseCase
+import com.aistudio.cleanmind.app.domain.usecase.FindLargeFilesUseCase
+import com.aistudio.cleanmind.app.domain.usecase.FindOldFilesUseCase
+import com.aistudio.cleanmind.app.domain.usecase.FindTemporaryFilesUseCase
+import com.aistudio.cleanmind.app.domain.usecase.GenerateCleanupRecommendationsUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetLatestAnalysisUseCase
 import com.aistudio.cleanmind.app.util.StorageFormatter
@@ -62,7 +68,8 @@ class HomeViewModel(
                                 lastAnalyzedDateFormatted = formattedDate,
                                 totalFilesAnalyzed = savedAnalysis.totalFilesCount,
                                 totalAnalyzedSpaceFormatted = StorageFormatter.formatBytes(savedAnalysis.totalAnalyzedSizeBytes),
-                                categories = categoryUis
+                                categories = categoryUis,
+                                recommendationsSummary = savedAnalysis.recommendationsSummary
                             )
                         } else {
                             state
@@ -73,7 +80,8 @@ class HomeViewModel(
                         state.copy(
                             hasSavedAnalysis = false,
                             lastAnalyzedEpochMillis = null,
-                            lastAnalyzedDateFormatted = null
+                            lastAnalyzedDateFormatted = null,
+                            recommendationsSummary = null
                         )
                     }
                 }
@@ -119,6 +127,10 @@ class HomeViewModel(
         _uiState.update { it.copy(status = AnalysisStatus.PersistenceError(message)) }
     }
 
+    fun onFilterSelected(filter: RecommendationFilter) {
+        _uiState.update { it.copy(selectedFilter = filter) }
+    }
+
     fun startStorageAnalysis() {
         viewModelScope.launch(ioDispatcher) {
             _uiState.update { it.copy(status = AnalysisStatus.Analyzing) }
@@ -139,7 +151,8 @@ class HomeViewModel(
                         deviceTotalSpaceFormatted = StorageFormatter.formatBytes(analysisResult.deviceStorageStats.totalBytes),
                         deviceUsedSpaceFormatted = StorageFormatter.formatBytes(analysisResult.deviceStorageStats.usedBytes),
                         deviceFreeSpaceFormatted = StorageFormatter.formatBytes(analysisResult.deviceStorageStats.freeBytes),
-                        usedPercentage = analysisResult.deviceStorageStats.usedPercentage
+                        usedPercentage = analysisResult.deviceStorageStats.usedPercentage,
+                        recommendationsSummary = analysisResult.recommendationsSummary
                     )
                 }
             }.onFailure { throwable ->
@@ -199,9 +212,27 @@ class HomeViewModel(
                     val historyRepository = AnalysisHistoryRepositoryImpl(analysisDao)
                     val dataSource = MediaStoreDataSourceImpl(application.applicationContext)
                     val storageRepository = StorageRepositoryImpl(dataSource)
+                    val fileHashRepository = FileHashRepositoryImpl(application.applicationContext)
+
+                    val findLargeFilesUseCase = FindLargeFilesUseCase()
+                    val findDuplicateFilesUseCase = FindDuplicateFilesUseCase(fileHashRepository)
+                    val findOldFilesUseCase = FindOldFilesUseCase()
+                    val findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
+                    val generateRecommendationsUseCase = GenerateCleanupRecommendationsUseCase(
+                        findLargeFilesUseCase = findLargeFilesUseCase,
+                        findDuplicateFilesUseCase = findDuplicateFilesUseCase,
+                        findOldFilesUseCase = findOldFilesUseCase,
+                        findTemporaryFilesUseCase = findTemporaryFilesUseCase
+                    )
+
                     val getStatsUseCase = GetDeviceStorageStatsUseCase(storageRepository)
-                    val analyzeUseCase = AnalyzeStorageUseCase(storageRepository, historyRepository)
+                    val analyzeUseCase = AnalyzeStorageUseCase(
+                        repository = storageRepository,
+                        historyRepository = historyRepository,
+                        generateCleanupRecommendationsUseCase = generateRecommendationsUseCase
+                    )
                     val getLatestAnalysisUseCase = GetLatestAnalysisUseCase(historyRepository)
+
                     return HomeViewModel(
                         application = application,
                         getDeviceStorageStatsUseCase = getStatsUseCase,

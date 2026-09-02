@@ -6,5 +6,15 @@ enum class StorageCategory {
     AUDIOS,
     DOCUMENTS,
     LARGE_FILES,
-    OTHERS
+    OTHERS;
+
+    val displayName: String
+        get() = when (this) {
+            IMAGES -> "Imagens"
+            VIDEOS -> "Vídeos"
+            AUDIOS -> "Áudios"
+            DOCUMENTS -> "Documentos"
+            LARGE_FILES -> "Arquivos Grandes"
+            OTHERS -> "Outros"
+        }
 }

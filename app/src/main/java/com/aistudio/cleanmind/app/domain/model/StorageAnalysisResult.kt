@@ -7,5 +7,6 @@ data class StorageAnalysisResult(
     val files: List<StorageFile>,
     val deviceStorageStats: DeviceStorageStats,
     val timestampEpochMillis: Long = System.currentTimeMillis(),
-    val id: Long = 0L
+    val id: Long = 0L,
+    val recommendationsSummary: AnalysisRecommendationsSummary? = null
 )

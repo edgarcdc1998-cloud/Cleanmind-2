@@ -3,12 +3,18 @@ package com.aistudio.cleanmind.app.data.repository
 import com.aistudio.cleanmind.app.data.local.dao.AnalysisDao
 import com.aistudio.cleanmind.app.data.local.entity.AnalysisSummaryEntity
 import com.aistudio.cleanmind.app.data.local.entity.CategorySummaryEntity
+import com.aistudio.cleanmind.app.data.local.entity.RecommendationEntity
 import com.aistudio.cleanmind.app.data.local.entity.ScannedFileEntity
+import com.aistudio.cleanmind.app.domain.model.AnalysisRecommendationsSummary
 import com.aistudio.cleanmind.app.domain.model.CategorySummary
+import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
 import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
+import com.aistudio.cleanmind.app.domain.model.DuplicateGroup
+import com.aistudio.cleanmind.app.domain.model.RecommendationType
 import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageFile
 import com.aistudio.cleanmind.app.domain.repository.AnalysisHistoryRepository
+import com.aistudio.cleanmind.app.util.StorageFormatter
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -22,9 +28,9 @@ class AnalysisHistoryRepositoryImpl(
 ) : AnalysisHistoryRepository {
 
     override fun getLatestAnalysis(): Flow<StorageAnalysisResult?> {
-        return analysisDao.getLatestAnalysisWithCategories()
-            .map { withCategories ->
-                withCategories?.let { item ->
+        return analysisDao.getLatestAnalysisWithDetails()
+            .map { withDetails ->
+                withDetails?.let { item ->
                     val summary = item.summary
                     val stats = DeviceStorageStats(
                         totalBytes = summary.deviceTotalBytes,
@@ -39,6 +45,58 @@ class AnalysisHistoryRepositoryImpl(
                         )
                     }
 
+                    val recommendations = item.recommendations.map { rec ->
+                        CleanupRecommendation(
+                            id = rec.id,
+                            file = StorageFile(
+                                id = rec.fileId,
+                                name = rec.fileName,
+                                uri = rec.fileUri,
+                                sizeBytes = rec.fileSizeBytes,
+                                mimeType = "",
+                                extension = StorageFormatter.extractExtension(rec.fileName),
+                                dateModifiedEpochSeconds = 0L,
+                                category = rec.category
+                            ),
+                            type = rec.type,
+                            priority = rec.priority,
+                            score = rec.score,
+                            reason = rec.reason,
+                            reclaimableSizeBytes = rec.reclaimableSizeBytes,
+                            duplicateGroupId = rec.duplicateGroupId
+                        )
+                    }
+
+                    val recommendationsSummary = if (recommendations.isNotEmpty()) {
+                        val duplicateGroups = recommendations
+                            .filter { it.type == RecommendationType.DUPLICATE && it.duplicateGroupId != null }
+                            .groupBy { it.duplicateGroupId!! }
+                            .map { (groupId, recs) ->
+                                val files = recs.map { it.file }
+                                val singleSize = recs.firstOrNull()?.reclaimableSizeBytes ?: 0L
+                                DuplicateGroup(
+                                    groupId = groupId,
+                                    totalSizeBytes = (files.size + 1) * singleSize,
+                                    reclaimableSizeBytes = files.size * singleSize,
+                                    files = files
+                                )
+                            }
+
+                        AnalysisRecommendationsSummary(
+                            totalRecommendationsCount = recommendations.size,
+                            potentialReclaimableBytes = recommendations.sumOf { it.reclaimableSizeBytes },
+                            largeFilesCount = recommendations.count { it.type == RecommendationType.LARGE_FILE },
+                            duplicateFilesCount = recommendations.count { it.type == RecommendationType.DUPLICATE },
+                            duplicateGroupsCount = duplicateGroups.size,
+                            oldFilesCount = recommendations.count { it.type == RecommendationType.OLD_FILE },
+                            temporaryFilesCount = recommendations.count { it.type == RecommendationType.TEMPORARY_FILE },
+                            recommendations = recommendations,
+                            duplicateGroups = duplicateGroups
+                        )
+                    } else {
+                        null
+                    }
+
                     StorageAnalysisResult(
                         id = summary.id,
                         totalFilesCount = summary.totalFilesCount,
@@ -46,7 +104,8 @@ class AnalysisHistoryRepositoryImpl(
                         categorySummaries = categories,
                         files = emptyList(),
                         deviceStorageStats = stats,
-                        timestampEpochMillis = summary.timestampEpochMillis
+                        timestampEpochMillis = summary.timestampEpochMillis,
+                        recommendationsSummary = recommendationsSummary
                     )
                 }
             }
@@ -87,10 +146,28 @@ class AnalysisHistoryRepositoryImpl(
                 )
             }
 
+            val recommendationEntities = result.recommendationsSummary?.recommendations?.map { rec ->
+                RecommendationEntity(
+                    analysisId = 0L,
+                    fileId = rec.file.id,
+                    fileName = rec.file.name,
+                    fileUri = rec.file.uri,
+                    fileSizeBytes = rec.file.sizeBytes,
+                    category = rec.file.category,
+                    type = rec.type,
+                    priority = rec.priority,
+                    score = rec.score,
+                    reason = rec.reason,
+                    reclaimableSizeBytes = rec.reclaimableSizeBytes,
+                    duplicateGroupId = rec.duplicateGroupId
+                )
+            } ?: emptyList()
+
             val id = analysisDao.insertFullAnalysis(
                 summary = summaryEntity,
                 categories = categoryEntities,
-                files = fileEntities
+                files = fileEntities,
+                recommendations = recommendationEntities
             )
             Result.success(id)
         } catch (e: Exception) {

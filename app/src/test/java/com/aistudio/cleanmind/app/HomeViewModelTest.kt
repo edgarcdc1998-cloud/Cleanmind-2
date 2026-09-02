@@ -287,4 +287,24 @@ class HomeViewModelTest {
         assertTrue(status is AnalysisStatus.PersistenceError)
         assertEquals("Erro ao salvar no banco", (status as AnalysisStatus.PersistenceError).errorMessage)
     }
+
+    @Test
+    fun filterRecommendations_updatesFilteredList() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val viewModel = HomeViewModel(
+            application,
+            GetDeviceStorageStatsUseCase(fakeRepo),
+            AnalyzeStorageUseCase(fakeRepo),
+            testDispatcher
+        )
+        advanceUntilIdle()
+
+        assertEquals(com.aistudio.cleanmind.app.presentation.home.RecommendationFilter.ALL, viewModel.uiState.value.selectedFilter)
+
+        viewModel.onFilterSelected(com.aistudio.cleanmind.app.presentation.home.RecommendationFilter.DUPLICATES)
+        assertEquals(com.aistudio.cleanmind.app.presentation.home.RecommendationFilter.DUPLICATES, viewModel.uiState.value.selectedFilter)
+
+        viewModel.onFilterSelected(com.aistudio.cleanmind.app.presentation.home.RecommendationFilter.LARGE_FILES)
+        assertEquals(com.aistudio.cleanmind.app.presentation.home.RecommendationFilter.LARGE_FILES, viewModel.uiState.value.selectedFilter)
+    }
 }

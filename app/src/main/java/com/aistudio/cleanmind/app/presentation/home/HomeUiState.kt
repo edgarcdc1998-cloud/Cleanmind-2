@@ -1,6 +1,10 @@
 package com.aistudio.cleanmind.app.presentation.home
 
+import com.aistudio.cleanmind.app.domain.model.AnalysisRecommendationsSummary
+import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
+import com.aistudio.cleanmind.app.domain.model.RecommendationType
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
+import com.aistudio.cleanmind.app.util.StorageFormatter
 
 sealed interface AnalysisStatus {
     data object Idle : AnalysisStatus
@@ -32,6 +36,8 @@ data class HomeUiState(
     val totalFilesAnalyzed: Int = 0,
     val totalAnalyzedSpaceFormatted: String? = null,
     val categories: List<CategorySummaryUi> = emptyList(),
+    val recommendationsSummary: AnalysisRecommendationsSummary? = null,
+    val selectedFilter: RecommendationFilter = RecommendationFilter.ALL,
     val showSettingsDialog: Boolean = false,
     val showPermissionRationaleDialog: Boolean = false
 ) {
@@ -40,4 +46,19 @@ data class HomeUiState(
 
     val isAnalyzing: Boolean
         get() = status is AnalysisStatus.Analyzing
+
+    val filteredRecommendations: List<CleanupRecommendation>
+        get() {
+            val list = recommendationsSummary?.recommendations ?: emptyList()
+            return when (selectedFilter) {
+                RecommendationFilter.ALL -> list
+                RecommendationFilter.DUPLICATES -> list.filter { it.type == RecommendationType.DUPLICATE }
+                RecommendationFilter.LARGE_FILES -> list.filter { it.type == RecommendationType.LARGE_FILE }
+                RecommendationFilter.OLD_FILES -> list.filter { it.type == RecommendationType.OLD_FILE }
+                RecommendationFilter.TEMPORARY_FILES -> list.filter { it.type == RecommendationType.TEMPORARY_FILE }
+            }
+        }
+
+    val potentialReclaimableSpaceFormatted: String?
+        get() = recommendationsSummary?.potentialReclaimableBytes?.let { StorageFormatter.formatBytes(it) }
 }
