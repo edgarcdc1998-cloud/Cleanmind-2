@@ -1,21 +1,24 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# CleanMind - Android R8 / ProGuard Configuration
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Line number information for debugging stack traces
+-keepattributes SourceFile,LineNumberTable
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Room Database
+-keep class * extends androidx.room.RoomDatabase
+-dontwarn androidx.room.paging.**
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# WorkManager
+-keep class * extends androidx.work.ListenableWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-keep class * extends androidx.work.Worker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+
+# Domain & Data Models (preserve entity fields)
+-keepclassmembers class com.aistudio.cleanmind.app.data.local.entity.** { *; }
+-keepclassmembers class com.aistudio.cleanmind.app.domain.model.** { *; }
+
+# Google ML Kit Text Recognition
+-keep class com.google.mlkit.vision.text.** { *; }
+-dontwarn com.google.mlkit.**
