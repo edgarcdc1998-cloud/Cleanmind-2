@@ -25,6 +25,7 @@ class FindDuplicateFilesUseCase(
             val hashesMap = mutableMapOf<String, MutableList<StorageFile>>()
 
             for (file in candidateFiles) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 val hash = fileHashRepository.calculateContentHash(file.uri)
                 if (hash != null) {
                     hashesMap.getOrPut(hash) { mutableListOf() }.add(file)

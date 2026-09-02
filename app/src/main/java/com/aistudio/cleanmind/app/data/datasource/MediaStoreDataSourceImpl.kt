@@ -118,6 +118,7 @@ class MediaStoreDataSourceImpl(
                 } else -1
 
                 while (cursor.moveToNext()) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     val id = if (idCol >= 0) cursor.getLong(idCol) else 0L
                     val name = if (nameCol >= 0) cursor.getString(nameCol) ?: "unnamed" else "unnamed"
                     val size = if (sizeCol >= 0) cursor.getLong(sizeCol).coerceAtLeast(0L) else 0L
@@ -194,6 +195,7 @@ class MediaStoreDataSourceImpl(
                 } else -1
 
                 while (cursor.moveToNext()) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     val id = if (idCol >= 0) cursor.getLong(idCol) else 0L
                     val name = if (nameCol >= 0) cursor.getString(nameCol) ?: "unnamed" else "unnamed"
                     val size = if (sizeCol >= 0) cursor.getLong(sizeCol).coerceAtLeast(0L) else 0L
