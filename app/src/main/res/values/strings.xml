@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">CleanMind</string>
+    <string name="storage_summary_title">Resumo do Armazenamento</string>
+    <string name="storage_total_label">Espaço Total</string>
+    <string name="storage_used_label">Espaço Utilizado</string>
+    <string name="storage_free_label">Espaço Disponível</string>
+    <string name="storage_status_not_analyzed">Ainda não analisado</string>
+    <string name="storage_status_analyzing">Analisando armazenamento...</string>
+    <string name="storage_status_analyzed">Armazenamento analisado com sucesso</string>
+    <string name="btn_analyze_storage">Analisar armazenamento</string>
+    <string name="btn_reanalyze_storage">Reanalisar armazenamento</string>
+    <string name="btn_grant_permission">Conceder Permissão</string>
+    <string name="btn_open_settings">Abrir Configurações</string>
+    <string name="settings_title">Configurações</string>
+    <string name="privacy_badge_text">100% On-Device • Privacidade Garantida</string>
+    <string name="local_processing_desc">O CleanMind opera de forma totalmente local. Nenhum arquivo ou dado pessoal é enviado para servidores externos.</string>
+
+    <!-- Categories -->
+    <string name="category_images">Imagens</string>
+    <string name="category_videos">Vídeos</string>
+    <string name="category_audios">Áudios</string>
+    <string name="category_documents">Documentos</string>
+    <string name="category_large_files">Arquivos Grandes</string>
+    <string name="category_others">Outros Arquivos</string>
+
+    <!-- Permissions -->
+    <string name="permission_rationale_title">Acesso ao Armazenamento</string>
+    <string name="permission_rationale_desc">Para analisar fotos, vídeos, músicas e documentos no dispositivo e fornecer um resumo preciso das categorias, o CleanMind precisa de autorização de leitura de mídia.</string>
+    <string name="permission_denied_title">Permissão Necessária</string>
+    <string name="permission_denied_desc">O acesso aos arquivos de mídia foi recusado. Para que o CleanMind possa analisar o armazenamento do seu dispositivo, conceda a permissão nas configurações do sistema.</string>
+    <string name="analysis_summary_header">Distribuição por Categoria</string>
+    <string name="analysis_total_files_format">%1$d arquivos encontrados</string>
+    <string name="analysis_empty_state">Nenhum arquivo encontrado nas categorias autorizadas.</string>
+    <string name="error_reading_storage">Ocorreu um erro ao ler o armazenamento do dispositivo.</string>
+</resources>

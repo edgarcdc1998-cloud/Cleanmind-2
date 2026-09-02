@@ -1,0 +1,6 @@
+{
+  "name": "CleanMind",
+  "description": "Gerenciador inteligente de armazenamento local para Android com foco em privacidade e processamento on-device.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
