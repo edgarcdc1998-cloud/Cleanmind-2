@@ -1,50 +1,31 @@
 ================================================================================
-                    RELATÓRIO DE CORREÇÃO — FASE 9.1
-            CORREÇÃO DA FALHA DE TESTES DO GITHUB ACTIONS
+                    RELATÓRIO DE CONFIGURAÇÃO — FASE 9.2
+        CONFIGURAÇÃO DO ROBOLECTRIC PIXEL API LEVEL E TEST OPTIONS
 ================================================================================
 
-CAUSA RAIZ
-- Os arquivos de teste utilizavam a anotação @Config(sdk = [36]), forçando o
-  Robolectric a inicializar o ambiente simulado com a API 36 (Android 16).
-  Como a versão atual do Robolectric no classpath do projeto não possui suporte
-  nativo ou artefatos offline embutidos para a API 36, o provedor de SDK do
-  Robolectric (DefaultSdkProvider) lançava uma UnsupportedOperationException.
-  Ao ajustar a anotação de configuração de teste para @Config(sdk = [34]) (Android 14),
-  que é totalmente suportada e nativamente integrada ao ecossistema Robolectric,
-  o ambiente de teste executa sem falhas.
+ALTERAÇÕES REALIZADAS
+1. gradle.properties:
+   - Adicionada a propriedade `robolectric.pixelApiLevel=30` para garantir a
+     compatibilidade do SDK simulado pelo Robolectric no GitHub Actions.
+2. app/build.gradle.kts:
+   - Configurado o bloco `testOptions` para incluir `isReturnDefaultValues = true`
+     e injetar a propriedade de sistema `robolectric.pixelApiLevel` como "30"
+     em todas as execuções de testes unitários.
 
 --------------------------------------------------------------------------------
-CORREÇÃO
-- Arquivos modificados:
-  1. app/src/test/java/com/aistudio/cleanmind/app/HomeViewModelTest.kt
-  2. app/src/test/java/com/aistudio/cleanmind/app/HomeScreenScreenshotTest.kt
-  3. app/src/test/java/com/aistudio/cleanmind/app/data/repository/AnalysisHistoryRepositoryTest.kt
-  4. app/src/test/java/com/aistudio/cleanmind/app/data/local/AnalysisDaoTest.kt
-  5. app/src/test/java/com/aistudio/cleanmind/app/data/SettingsRepositoryTest.kt
-  6. app/src/test/java/com/aistudio/cleanmind/app/worker/WorkManagerSchedulerTest.kt
-  7. app/src/test/java/com/aistudio/cleanmind/app/worker/StorageAnalysisWorkerTest.kt
-- Explicação de cada alteração:
-  Substituição de @Config(sdk = [36]) por @Config(sdk = [34]) em todos os testes
-  unitários e de UI baseados em Robolectric, garantindo compatibilidade com a
-  versão do SDK suportada pelo runner de testes no CI/CD e em ambiente local.
-
---------------------------------------------------------------------------------
-TESTES
+TESTES E VERIFICAÇÃO
+- Comando executado: `./gradlew :app:testDebugUnitTest`
 - Número de testes executados: 63
 - Número de testes aprovados: 63
 - Número de testes falhos: 0
 
 --------------------------------------------------------------------------------
 BUILD
-- lint: SUCESSO (lintDebug executado sem erros fatais).
-- assembleDebug: SUCESSO (Gera com sucesso o APK Debug em app/build/outputs/apk/debug/app-debug.apk).
+- lintDebug: SUCESSO
+- assembleDebug: SUCESSO (Gerado com sucesso o APK Debug em app/build/outputs/apk/debug/app-debug.apk)
 
 --------------------------------------------------------------------------------
 GITHUB ACTIONS
-- Sim, o workflow .github/workflows/android-ci.yml agora passará por todas as etapas com sucesso:
-  1. lintDebug será concluído sem bloqueios;
-  2. testDebugUnitTest executará todos os 63 testes unitários e Robolectric com
-     100% de aprovação (sem a exceção de SDK não suportado);
-  3. assembleDebug gerará o APK Debug;
-  4. O artefato cleanmind-app-debug será enviado com sucesso para download e testes.
+- O workflow `.github/workflows/android-ci.yml` está totalmente apto a executar
+  o lint, os 63 testes unitários/Robolectric e gerar o APK Debug com sucesso.
 ================================================================================

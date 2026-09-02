@@ -61,7 +61,15 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      isReturnDefaultValues = true
+      all {
+        it.systemProperty("robolectric.pixelApiLevel", "30")
+      }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
