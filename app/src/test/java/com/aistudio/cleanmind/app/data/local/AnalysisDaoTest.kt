@@ -24,7 +24,7 @@ import org.robolectric.annotation.Config
 import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [34])
 class AnalysisDaoTest {
 
     private lateinit var database: CleanMindDatabase
