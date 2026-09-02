@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aistudio.cleanmind.app.R
 import com.aistudio.cleanmind.app.data.datasource.MediaStoreDataSourceImpl
+import com.aistudio.cleanmind.app.data.local.database.CleanMindDatabase
+import com.aistudio.cleanmind.app.data.repository.AnalysisHistoryRepositoryImpl
 import com.aistudio.cleanmind.app.data.repository.StorageRepositoryImpl
 import com.aistudio.cleanmind.app.domain.model.CategorySummary
 import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
@@ -14,6 +16,7 @@ import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
+import com.aistudio.cleanmind.app.domain.usecase.GetLatestAnalysisUseCase
 import com.aistudio.cleanmind.app.util.StorageFormatter
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +30,8 @@ class HomeViewModel(
     application: Application,
     private val getDeviceStorageStatsUseCase: GetDeviceStorageStatsUseCase,
     private val analyzeStorageUseCase: AnalyzeStorageUseCase,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val getLatestAnalysisUseCase: GetLatestAnalysisUseCase? = null
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -35,6 +39,46 @@ class HomeViewModel(
 
     init {
         loadDeviceStorageStats()
+        observeSavedAnalysis()
+    }
+
+    private fun observeSavedAnalysis() {
+        val useCase = getLatestAnalysisUseCase ?: return
+        viewModelScope.launch(ioDispatcher) {
+            useCase().collect { savedAnalysis ->
+                if (savedAnalysis != null) {
+                    val categoryUis = mapCategorySummaries(savedAnalysis.categorySummaries)
+                    val formattedDate = StorageFormatter.formatTimestamp(savedAnalysis.timestampEpochMillis)
+                    _uiState.update { state ->
+                        if (state.status !is AnalysisStatus.Analyzing) {
+                            state.copy(
+                                status = if (state.status is AnalysisStatus.Idle) {
+                                    AnalysisStatus.Saved(formattedDate)
+                                } else {
+                                    state.status
+                                },
+                                hasSavedAnalysis = true,
+                                lastAnalyzedEpochMillis = savedAnalysis.timestampEpochMillis,
+                                lastAnalyzedDateFormatted = formattedDate,
+                                totalFilesAnalyzed = savedAnalysis.totalFilesCount,
+                                totalAnalyzedSpaceFormatted = StorageFormatter.formatBytes(savedAnalysis.totalAnalyzedSizeBytes),
+                                categories = categoryUis
+                            )
+                        } else {
+                            state
+                        }
+                    }
+                } else {
+                    _uiState.update { state ->
+                        state.copy(
+                            hasSavedAnalysis = false,
+                            lastAnalyzedEpochMillis = null,
+                            lastAnalyzedDateFormatted = null
+                        )
+                    }
+                }
+            }
+        }
     }
 
     fun loadDeviceStorageStats() {
@@ -71,6 +115,10 @@ class HomeViewModel(
         }
     }
 
+    fun onPersistenceError(message: String) {
+        _uiState.update { it.copy(status = AnalysisStatus.PersistenceError(message)) }
+    }
+
     fun startStorageAnalysis() {
         viewModelScope.launch(ioDispatcher) {
             _uiState.update { it.copy(status = AnalysisStatus.Analyzing) }
@@ -78,9 +126,13 @@ class HomeViewModel(
             val result = analyzeStorageUseCase()
             result.onSuccess { analysisResult ->
                 val categoryUis = mapCategorySummaries(analysisResult.categorySummaries)
+                val formattedDate = StorageFormatter.formatTimestamp(analysisResult.timestampEpochMillis)
                 _uiState.update { state ->
                     state.copy(
                         status = AnalysisStatus.Success,
+                        hasSavedAnalysis = true,
+                        lastAnalyzedEpochMillis = analysisResult.timestampEpochMillis,
+                        lastAnalyzedDateFormatted = formattedDate,
                         totalFilesAnalyzed = analysisResult.totalFilesCount,
                         totalAnalyzedSpaceFormatted = StorageFormatter.formatBytes(analysisResult.totalAnalyzedSizeBytes),
                         categories = categoryUis,
@@ -142,14 +194,19 @@ class HomeViewModel(
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    val db = CleanMindDatabase.getInstance(application.applicationContext)
+                    val analysisDao = db.analysisDao()
+                    val historyRepository = AnalysisHistoryRepositoryImpl(analysisDao)
                     val dataSource = MediaStoreDataSourceImpl(application.applicationContext)
-                    val repository = StorageRepositoryImpl(dataSource)
-                    val getStatsUseCase = GetDeviceStorageStatsUseCase(repository)
-                    val analyzeUseCase = AnalyzeStorageUseCase(repository)
+                    val storageRepository = StorageRepositoryImpl(dataSource)
+                    val getStatsUseCase = GetDeviceStorageStatsUseCase(storageRepository)
+                    val analyzeUseCase = AnalyzeStorageUseCase(storageRepository, historyRepository)
+                    val getLatestAnalysisUseCase = GetLatestAnalysisUseCase(historyRepository)
                     return HomeViewModel(
                         application = application,
                         getDeviceStorageStatsUseCase = getStatsUseCase,
-                        analyzeStorageUseCase = analyzeUseCase
+                        analyzeStorageUseCase = analyzeUseCase,
+                        getLatestAnalysisUseCase = getLatestAnalysisUseCase
                     ) as T
                 }
             }

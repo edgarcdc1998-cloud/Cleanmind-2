@@ -5,5 +5,7 @@ data class StorageAnalysisResult(
     val totalAnalyzedSizeBytes: Long,
     val categorySummaries: List<CategorySummary>,
     val files: List<StorageFile>,
-    val deviceStorageStats: DeviceStorageStats
+    val deviceStorageStats: DeviceStorageStats,
+    val timestampEpochMillis: Long = System.currentTimeMillis(),
+    val id: Long = 0L
 )

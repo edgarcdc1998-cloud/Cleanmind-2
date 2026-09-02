@@ -6,13 +6,19 @@ import com.aistudio.cleanmind.app.domain.model.CategorySummary
 import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
 import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
+import com.aistudio.cleanmind.app.domain.model.StorageFile
+import com.aistudio.cleanmind.app.domain.repository.AnalysisHistoryRepository
 import com.aistudio.cleanmind.app.domain.repository.StorageRepository
 import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
+import com.aistudio.cleanmind.app.domain.usecase.GetLatestAnalysisUseCase
 import com.aistudio.cleanmind.app.presentation.home.AnalysisStatus
 import com.aistudio.cleanmind.app.presentation.home.HomeViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -183,5 +189,102 @@ class HomeViewModelTest {
 
         viewModel.onDismissSettings()
         assertFalse(viewModel.uiState.value.showSettingsDialog)
+    }
+
+    private class FakeHistoryRepository(
+        initialAnalysis: StorageAnalysisResult? = null
+    ) : AnalysisHistoryRepository {
+        private val _flow = MutableStateFlow(initialAnalysis)
+        var savedCount = 0
+
+        override fun getLatestAnalysis(): Flow<StorageAnalysisResult?> = _flow.asStateFlow()
+
+        override suspend fun saveAnalysis(result: StorageAnalysisResult): Result<Long> {
+            savedCount++
+            _flow.value = result
+            return Result.success(1L)
+        }
+
+        override fun getFilesForAnalysis(analysisId: Long): Flow<List<StorageFile>> = MutableStateFlow(emptyList())
+
+        override suspend fun clearHistory(): Result<Unit> {
+            _flow.value = null
+            return Result.success(Unit)
+        }
+    }
+
+    @Test
+    fun initialState_withSavedAnalysis_loadsSavedStatusAndCategories() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val fakeHistoryRepo = FakeHistoryRepository(
+            initialAnalysis = StorageAnalysisResult(
+                totalFilesCount = 42,
+                totalAnalyzedSizeBytes = 100L * 1024 * 1024,
+                categorySummaries = listOf(
+                    CategorySummary(StorageCategory.IMAGES, 20, 60L * 1024 * 1024),
+                    CategorySummary(StorageCategory.VIDEOS, 22, 40L * 1024 * 1024)
+                ),
+                files = emptyList(),
+                deviceStorageStats = DeviceStorageStats(100L * 1024 * 1024 * 1024, 60L * 1024 * 1024 * 1024, 40L * 1024 * 1024 * 1024),
+                timestampEpochMillis = 1700000000000L
+            )
+        )
+
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo, fakeHistoryRepo),
+            ioDispatcher = testDispatcher,
+            getLatestAnalysisUseCase = GetLatestAnalysisUseCase(fakeHistoryRepo)
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.status is AnalysisStatus.Saved)
+        assertTrue(state.hasSavedAnalysis)
+        assertEquals(42, state.totalFilesAnalyzed)
+        assertEquals(2, state.categories.size)
+        assertNotNull(state.lastAnalyzedDateFormatted)
+    }
+
+    @Test
+    fun onPermissionGranted_withHistoryRepo_persistsResult() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val fakeHistoryRepo = FakeHistoryRepository()
+
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo, fakeHistoryRepo),
+            ioDispatcher = testDispatcher,
+            getLatestAnalysisUseCase = GetLatestAnalysisUseCase(fakeHistoryRepo)
+        )
+        advanceUntilIdle()
+
+        viewModel.onPermissionGranted()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(AnalysisStatus.Success, state.status)
+        assertEquals(1, fakeHistoryRepo.savedCount)
+        assertTrue(state.hasSavedAnalysis)
+        assertEquals(10, state.totalFilesAnalyzed)
+    }
+
+    @Test
+    fun onPersistenceError_setsPersistenceErrorStatus() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val viewModel = HomeViewModel(
+            application,
+            GetDeviceStorageStatsUseCase(fakeRepo),
+            AnalyzeStorageUseCase(fakeRepo),
+            testDispatcher
+        )
+        advanceUntilIdle()
+
+        viewModel.onPersistenceError("Erro ao salvar no banco")
+        val status = viewModel.uiState.value.status
+        assertTrue(status is AnalysisStatus.PersistenceError)
+        assertEquals("Erro ao salvar no banco", (status as AnalysisStatus.PersistenceError).errorMessage)
     }
 }

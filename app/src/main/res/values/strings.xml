@@ -32,4 +32,7 @@
     <string name="analysis_total_files_format">%1$d arquivos encontrados</string>
     <string name="analysis_empty_state">Nenhum arquivo encontrado nas categorias autorizadas.</string>
     <string name="error_reading_storage">Ocorreu um erro ao ler o armazenamento do dispositivo.</string>
+    <string name="last_analysis_header">Última Análise Salva</string>
+    <string name="last_analysis_date_format">Analisado em %1$s</string>
+    <string name="error_persistence">Erro ao salvar histórico de análise no banco de dados local.</string>
 </resources>

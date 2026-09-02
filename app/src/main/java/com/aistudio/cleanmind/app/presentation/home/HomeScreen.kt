@@ -290,6 +290,11 @@ fun HomeScreen(
                             PrivacyBadge(modifier = Modifier.testTag("privacy_badge"))
                         }
 
+                        is AnalysisStatus.Saved -> {
+                            AnalysisResultsSection(uiState = uiState, isSaved = true)
+                            PrivacyBadge(modifier = Modifier.testTag("privacy_badge"))
+                        }
+
                         is AnalysisStatus.RequestingPermission -> {
                             RequestingPermissionSection()
                         }
@@ -299,7 +304,7 @@ fun HomeScreen(
                         }
 
                         is AnalysisStatus.Success -> {
-                            AnalysisResultsSection(uiState = uiState)
+                            AnalysisResultsSection(uiState = uiState, isSaved = false)
                             PrivacyBadge(modifier = Modifier.testTag("privacy_badge"))
                         }
 
@@ -308,6 +313,14 @@ fun HomeScreen(
                                 onRetry = { handleStartAnalysis() },
                                 onOpenSettings = { openAppSettings(context) },
                                 modifier = Modifier.testTag("permission_denied_card")
+                            )
+                        }
+
+                        is AnalysisStatus.PersistenceError -> {
+                            ErrorStateCard(
+                                message = status.errorMessage,
+                                onRetry = { handleStartAnalysis() },
+                                modifier = Modifier.testTag("error_card")
                             )
                         }
 
@@ -366,8 +379,10 @@ private fun StorageSummaryCard(
                 Text(
                     text = when (uiState.status) {
                         is AnalysisStatus.Success -> stringResource(id = R.string.storage_status_analyzed)
+                        is AnalysisStatus.Saved -> stringResource(id = R.string.last_analysis_header)
                         is AnalysisStatus.Analyzing -> stringResource(id = R.string.storage_status_analyzing)
                         is AnalysisStatus.PermissionDenied -> stringResource(id = R.string.permission_denied_title)
+                        is AnalysisStatus.PersistenceError -> stringResource(id = R.string.error_persistence)
                         is AnalysisStatus.Error -> "Erro na Análise"
                         else -> stringResource(id = R.string.storage_status_not_analyzed)
                     },
@@ -434,6 +449,7 @@ private fun StorageSummaryCard(
 @Composable
 private fun AnalysisResultsSection(
     uiState: HomeUiState,
+    isSaved: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -445,18 +461,31 @@ private fun AnalysisResultsSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = stringResource(id = R.string.analysis_summary_header),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = ElegantDarkTextPrimary
-            )
+            Column(modifier = Modifier.weight(1f, fill = false)) {
+                Text(
+                    text = if (isSaved) stringResource(id = R.string.last_analysis_header) else stringResource(id = R.string.analysis_summary_header),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ElegantDarkTextPrimary
+                )
+                if (uiState.lastAnalyzedDateFormatted != null) {
+                    Text(
+                        text = stringResource(id = R.string.last_analysis_date_format, uiState.lastAnalyzedDateFormatted),
+                        fontSize = 12.sp,
+                        color = ElegantDarkTextMuted
+                    )
+                }
+            }
 
             Text(
-                text = stringResource(
-                    id = R.string.analysis_total_files_format,
-                    uiState.totalFilesAnalyzed
-                ),
+                text = if (uiState.totalAnalyzedSpaceFormatted != null) {
+                    "${uiState.totalFilesAnalyzed} arquivos (${uiState.totalAnalyzedSpaceFormatted})"
+                } else {
+                    stringResource(
+                        id = R.string.analysis_total_files_format,
+                        uiState.totalFilesAnalyzed
+                    )
+                },
                 fontSize = 13.sp,
                 color = ElegantDarkPrimary,
                 fontWeight = FontWeight.Medium

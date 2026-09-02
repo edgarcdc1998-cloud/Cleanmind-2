@@ -2,6 +2,8 @@ package com.aistudio.cleanmind.app.util
 
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import java.text.DecimalFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 object StorageFormatter {
@@ -53,6 +55,12 @@ object StorageFormatter {
                 ext in DOCUMENT_EXTENSIONS -> StorageCategory.DOCUMENTS
             else -> StorageCategory.OTHERS
         }
+    }
+
+    fun formatTimestamp(epochMillis: Long): String {
+        if (epochMillis <= 0L) return ""
+        val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+        return formatter.format(Date(epochMillis))
     }
 
     private val IMAGE_EXTENSIONS = setOf(
