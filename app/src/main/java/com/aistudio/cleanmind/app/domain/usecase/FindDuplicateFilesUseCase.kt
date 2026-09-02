@@ -3,6 +3,8 @@ package com.aistudio.cleanmind.app.domain.usecase
 import com.aistudio.cleanmind.app.domain.model.DuplicateGroup
 import com.aistudio.cleanmind.app.domain.model.StorageFile
 import com.aistudio.cleanmind.app.domain.repository.FileHashRepository
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 class FindDuplicateFilesUseCase(
     private val fileHashRepository: FileHashRepository

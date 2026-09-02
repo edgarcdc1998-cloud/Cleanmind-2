@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Warning
+import com.aistudio.cleanmind.app.presentation.components.SettingsDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -103,7 +104,11 @@ fun HomeScreen(
         factory = HomeViewModel.provideFactory(
             LocalContext.current.applicationContext as android.app.Application
         )
-    )
+    ),
+    onNavigateToAnalysis: () -> Unit = {},
+    onNavigateToRecommendations: () -> Unit = {},
+    onNavigateToStorage: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -308,7 +313,10 @@ fun HomeScreen(
                         }
 
                         is AnalysisStatus.Analyzing -> {
-                            AnalyzingStateSection()
+                            AnalyzingStateSection(
+                                onCancel = { viewModel.cancelAnalysis() },
+                                isBackgroundActive = uiState.isBackgroundWorkActive
+                            )
                         }
 
                         is AnalysisStatus.Success -> {
@@ -361,6 +369,13 @@ fun HomeScreen(
 
     if (uiState.showSettingsDialog) {
         SettingsDialog(
+            isAutoAnalysisEnabled = uiState.isAutoAnalysisEnabled,
+            autoAnalysisIntervalHours = uiState.autoAnalysisIntervalHours,
+            backgroundWorkStatus = uiState.backgroundWorkStatus,
+            onToggleAutoAnalysis = { enabled -> viewModel.onToggleAutoAnalysis(enabled) },
+            onSetIntervalHours = { hours -> viewModel.onSetAutoAnalysisInterval(hours) },
+            onStartManualAnalysis = { viewModel.startStorageAnalysis() },
+            onCancelAnalysis = { viewModel.cancelAnalysis() },
             onDismiss = { viewModel.onDismissSettings() }
         )
     }
@@ -676,7 +691,10 @@ private fun RequestingPermissionSection() {
 }
 
 @Composable
-private fun AnalyzingStateSection() {
+private fun AnalyzingStateSection(
+    onCancel: () -> Unit,
+    isBackgroundActive: Boolean
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -689,16 +707,38 @@ private fun AnalyzingStateSection() {
             modifier = Modifier.size(40.dp)
         )
         Text(
-            text = "Consultando catálogo de mídias locais...",
+            text = if (isBackgroundActive) {
+                "Análise em segundo plano em execução (WorkManager)..."
+            } else {
+                "Consultando catálogo de mídias locais..."
+            },
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
-            color = ElegantDarkTextPrimary
+            color = ElegantDarkTextPrimary,
+            textAlign = TextAlign.Center
         )
         Text(
-            text = "Processando de forma 100% segura e on-device.",
+            text = "Processando de forma 100% segura, isolada e on-device.",
             fontSize = 12.sp,
-            color = ElegantDarkTextMuted
+            color = ElegantDarkTextMuted,
+            textAlign = TextAlign.Center
         )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        OutlinedButton(
+            onClick = onCancel,
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.error
+            ),
+            modifier = Modifier.testTag("cancel_analysis_button")
+        ) {
+            Text(
+                text = stringResource(id = R.string.btn_cancel_analysis),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 
@@ -912,49 +952,6 @@ private fun SafeProcessingInfoCard(
             )
         }
     }
-}
-
-@Composable
-private fun SettingsDialog(
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = ElegantDarkSurfaceCard,
-        titleContentColor = ElegantDarkTextPrimary,
-        textContentColor = ElegantDarkTextSecondary,
-        shape = RoundedCornerShape(24.dp),
-        title = {
-            Text(
-                text = stringResource(id = R.string.settings_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "CleanMind v1.0 (Fase 2: Acesso Real)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = ElegantDarkPrimary
-                )
-                Text(
-                    text = "Análise local e em tempo real dos arquivos multimídia e documentos através de MediaStore e StatFs.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = ElegantDarkTextMuted
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.testTag("dialog_close_button")
-            ) {
-                Text("Fechar", color = ElegantDarkPrimary)
-            }
-        }
-    )
 }
 
 private fun openAppSettings(context: Context) {

@@ -13,6 +13,8 @@ import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.model.StorageFile
 import com.aistudio.cleanmind.app.util.StorageFormatter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 class MediaStoreDataSourceImpl(
@@ -82,7 +84,7 @@ class MediaStoreDataSourceImpl(
         filesList
     }
 
-    private fun queryCollection(
+    private suspend fun queryCollection(
         contentResolver: ContentResolver,
         collectionUri: Uri,
         defaultCategory: StorageCategory,
@@ -157,7 +159,7 @@ class MediaStoreDataSourceImpl(
         }
     }
 
-    private fun queryFilesCollection(
+    private suspend fun queryFilesCollection(
         contentResolver: ContentResolver,
         destination: MutableList<StorageFile>
     ) {

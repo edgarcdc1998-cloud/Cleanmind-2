@@ -22,7 +22,7 @@ class FileHashRepositoryImpl(
                 val buffer = ByteArray(BUFFER_SIZE)
                 var bytesRead: Int
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                    kotlinx.coroutines.ensureActive()
+                    coroutineContext.ensureActive()
                     digest.update(buffer, 0, bytesRead)
                 }
                 digest.digest().joinToString("") { "%02x".format(it) }

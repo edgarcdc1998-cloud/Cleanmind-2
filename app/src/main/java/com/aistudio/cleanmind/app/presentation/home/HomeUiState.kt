@@ -1,6 +1,7 @@
 package com.aistudio.cleanmind.app.presentation.home
 
 import com.aistudio.cleanmind.app.domain.model.AnalysisRecommendationsSummary
+import com.aistudio.cleanmind.app.domain.model.BackgroundWorkStatus
 import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
 import com.aistudio.cleanmind.app.domain.model.RecommendationType
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
@@ -38,14 +39,22 @@ data class HomeUiState(
     val categories: List<CategorySummaryUi> = emptyList(),
     val recommendationsSummary: AnalysisRecommendationsSummary? = null,
     val selectedFilter: RecommendationFilter = RecommendationFilter.ALL,
+    val backgroundWorkStatus: BackgroundWorkStatus = BackgroundWorkStatus.IDLE,
+    val isAutoAnalysisEnabled: Boolean = false,
+    val autoAnalysisIntervalHours: Int = 24,
     val showSettingsDialog: Boolean = false,
-    val showPermissionRationaleDialog: Boolean = false
+    val showPermissionRationaleDialog: Boolean = false,
+    val selectedRecommendationIds: Set<Long> = emptySet(),
+    val showReviewConfirmationDialog: Boolean = false
 ) {
     val isAnalyzed: Boolean
         get() = status is AnalysisStatus.Success || status is AnalysisStatus.Saved || hasSavedAnalysis
 
     val isAnalyzing: Boolean
-        get() = status is AnalysisStatus.Analyzing
+        get() = status is AnalysisStatus.Analyzing || backgroundWorkStatus == BackgroundWorkStatus.RUNNING || backgroundWorkStatus == BackgroundWorkStatus.ENQUEUED
+
+    val isBackgroundWorkActive: Boolean
+        get() = backgroundWorkStatus == BackgroundWorkStatus.ENQUEUED || backgroundWorkStatus == BackgroundWorkStatus.RUNNING
 
     val filteredRecommendations: List<CleanupRecommendation>
         get() {
@@ -58,6 +67,18 @@ data class HomeUiState(
                 RecommendationFilter.TEMPORARY_FILES -> list.filter { it.type == RecommendationType.TEMPORARY_FILE }
             }
         }
+
+    val selectedRecommendations: List<CleanupRecommendation>
+        get() {
+            val list = recommendationsSummary?.recommendations ?: emptyList()
+            return list.filter { selectedRecommendationIds.contains(it.id) }
+        }
+
+    val selectedReclaimableBytes: Long
+        get() = selectedRecommendations.sumOf { it.reclaimableSizeBytes }
+
+    val selectedReclaimableSpaceFormatted: String
+        get() = StorageFormatter.formatBytes(selectedReclaimableBytes)
 
     val potentialReclaimableSpaceFormatted: String?
         get() = recommendationsSummary?.potentialReclaimableBytes?.let { StorageFormatter.formatBytes(it) }

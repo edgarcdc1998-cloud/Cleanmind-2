@@ -54,4 +54,63 @@
     <string name="why_review_label">Por que revisar:</string>
     <string name="duplicate_group_badge">Grupo de Duplicatas</string>
     <string name="score_label">Score: %1$d/100</string>
+
+    <!-- WorkManager & Background Processing -->
+    <string name="worker_status_idle">Nenhuma análise em andamento</string>
+    <string name="worker_status_enqueued">Aguardando execução no WorkManager…</string>
+    <string name="worker_status_running">Análise em segundo plano em execução…</string>
+    <string name="worker_status_succeeded">Análise em segundo plano concluída com sucesso</string>
+    <string name="worker_status_failed">Falha na análise em segundo plano</string>
+    <string name="worker_status_cancelled">Análise cancelada pelo usuário</string>
+    <string name="btn_cancel_analysis">Cancelar Análise</string>
+    <string name="settings_auto_analysis_title">Análise Automática Periódica</string>
+    <string name="settings_auto_analysis_desc">Executa a verificação em segundo plano respeitando restrições de bateria e armazenamento.</string>
+    <string name="settings_auto_interval_title">Frequência da Análise</string>
+    <string name="settings_auto_interval_daily">A cada 24 horas (Diária)</string>
+    <string name="settings_auto_interval_weekly">A cada 7 dias (Semanal)</string>
+    <string name="settings_workmanager_status_title">Status do WorkManager</string>
+    <string name="settings_workmanager_constraints_info">Restrições ativas: Bateria não baixa • Armazenamento não baixo • 100% Local (sem exigência de rede)</string>
+    <string name="settings_start_background_work">Executar Análise em Background</string>
+    <string name="settings_close">Fechar</string>
+    <!-- Navigation -->
+    <string name="nav_home">Início</string>
+    <string name="nav_analysis">Análise</string>
+    <string name="nav_recommendations">Recomendações</string>
+    <string name="nav_storage">Armazenamento</string>
+    <string name="nav_settings">Configurações</string>
+
+    <!-- Storage Screen -->
+    <string name="storage_overview_title">Visão Geral do Armazenamento</string>
+    <string name="storage_breakdown_title">Distribuição por Categoria</string>
+    <string name="storage_statfs_explanation">Os valores de capacidade e espaço disponível são obtidos em tempo real da partição de dados do sistema Android (StatFs).</string>
+
+    <!-- Selection & Confirmation Dialog -->
+    <string name="review_selected_format">Revisar %1$d selecionados (%2$s)</string>
+    <string name="select_all">Selecionar Todos</string>
+    <string name="deselect_all">Desmarcar Todos</string>
+    <string name="delete_dialog_title">Confirmar Revisão</string>
+    <string name="delete_dialog_desc">Você selecionou %1$d arquivos totalizando %2$s para revisão. Nenhuma exclusão é realizada automaticamente sem seu consentimento.</string>
+    <string name="btn_confirm_review">Entendido</string>
+    <string name="btn_cancel">Cancelar</string>
+
+    <!-- Analysis Screen Details -->
+    <string name="analysis_details_title">Diagnóstico de Armazenamento</string>
+    <string name="analysis_status_title">Status da Varredura</string>
+    <string name="findings_title">Principais Descobertas</string>
+    <string name="findings_duplicates_format">%1$d arquivos duplicados identificados</string>
+    <string name="findings_large_format">%1$d arquivos de grande porte encontrados</string>
+    <string name="findings_old_format">%1$d arquivos antigos sem modificação recente</string>
+    <string name="findings_temp_format">%1$d arquivos temporários identificados</string>
+    <string name="btn_go_to_recommendations">Ver Recomendações</string>
+
+    <!-- Privacy Screen -->
+    <string name="privacy_title">Privacidade &amp; Segurança</string>
+    <string name="privacy_statement_1">Processamento 100% On-Device</string>
+    <string name="privacy_statement_1_desc">Toda a indexação, cálculo de hash SHA-256 e categorização são executados localmente na CPU do seu dispositivo.</string>
+    <string name="privacy_statement_2">Sem Envio para a Nuvem</string>
+    <string name="privacy_statement_2_desc">Nenhum arquivo pessoal, imagem, documento ou áudio sai do seu celular. Nenhum servidor externo é consultado.</string>
+    <string name="privacy_statement_3">Decisão Soberana do Usuário</string>
+    <string name="privacy_statement_3_desc">O CleanMind jamais deleta ou move qualquer arquivo automaticamente sem sua autorização explícita.</string>
+    <string name="app_version_label">Versão 1.0 (Clean Architecture)</string>
+    <string name="app_namespace_label">com.aistudio.cleanmind.app</string>
 </resources>

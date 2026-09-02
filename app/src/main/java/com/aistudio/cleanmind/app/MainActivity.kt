@@ -7,7 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.aistudio.cleanmind.app.presentation.home.HomeScreen
+import com.aistudio.cleanmind.app.presentation.navigation.CleanMindMainScreen
 import com.aistudio.cleanmind.app.presentation.theme.CleanMindTheme
 
 class MainActivity : ComponentActivity() {
@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             CleanMindTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    HomeScreen()
+                    CleanMindMainScreen()
                 }
             }
         }

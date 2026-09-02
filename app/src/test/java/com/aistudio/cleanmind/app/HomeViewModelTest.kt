@@ -307,4 +307,51 @@ class HomeViewModelTest {
         viewModel.onFilterSelected(com.aistudio.cleanmind.app.presentation.home.RecommendationFilter.LARGE_FILES)
         assertEquals(com.aistudio.cleanmind.app.presentation.home.RecommendationFilter.LARGE_FILES, viewModel.uiState.value.selectedFilter)
     }
+
+    @Test
+    fun recommendationSelection_toggleAndSelectAll_worksCorrectly() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val viewModel = HomeViewModel(
+            application,
+            GetDeviceStorageStatsUseCase(fakeRepo),
+            AnalyzeStorageUseCase(fakeRepo),
+            testDispatcher
+        )
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.selectedRecommendationIds.size)
+
+        viewModel.onToggleRecommendationSelection(101L)
+        assertTrue(viewModel.uiState.value.selectedRecommendationIds.contains(101L))
+
+        viewModel.onToggleRecommendationSelection(101L)
+        assertFalse(viewModel.uiState.value.selectedRecommendationIds.contains(101L))
+
+        viewModel.onToggleRecommendationSelection(102L)
+        viewModel.onToggleRecommendationSelection(103L)
+        assertEquals(2, viewModel.uiState.value.selectedRecommendationIds.size)
+
+        viewModel.onClearRecommendationSelection()
+        assertEquals(0, viewModel.uiState.value.selectedRecommendationIds.size)
+    }
+
+    @Test
+    fun reviewDialog_showAndDismiss_updatesState() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val viewModel = HomeViewModel(
+            application,
+            GetDeviceStorageStatsUseCase(fakeRepo),
+            AnalyzeStorageUseCase(fakeRepo),
+            testDispatcher
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showReviewConfirmationDialog)
+
+        viewModel.onShowReviewConfirmation()
+        assertTrue(viewModel.uiState.value.showReviewConfirmationDialog)
+
+        viewModel.onDismissReviewConfirmation()
+        assertFalse(viewModel.uiState.value.showReviewConfirmationDialog)
+    }
 }
