@@ -6,18 +6,20 @@ import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
 import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.repository.StorageRepository
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class StorageRepositoryImpl(
-    private val dataSource: StorageDataSource
+    private val dataSource: StorageDataSource,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : StorageRepository {
 
     override suspend fun getDeviceStorageStats(): DeviceStorageStats {
         return dataSource.getDeviceStorageStats()
     }
 
-    override suspend fun analyzeStorage(): Result<StorageAnalysisResult> = withContext(Dispatchers.IO) {
+    override suspend fun analyzeStorage(): Result<StorageAnalysisResult> = withContext(ioDispatcher) {
         try {
             val deviceStats = dataSource.getDeviceStorageStats()
             val files = dataSource.queryMediaFiles()
@@ -37,13 +39,15 @@ class StorageRepositoryImpl(
                 }
             }
 
-            val categorySummaries = StorageCategory.values().map { cat ->
+            val categorySummaries = StorageCategory.entries.mapNotNull { cat ->
                 val sizes = categoryMap[cat] ?: emptyList()
-                CategorySummary(
-                    category = cat,
-                    fileCount = sizes.size,
-                    totalSizeBytes = sizes.sum()
-                )
+                if (sizes.isNotEmpty()) {
+                    CategorySummary(
+                        category = cat,
+                        fileCount = sizes.size,
+                        totalSizeBytes = sizes.sum()
+                    )
+                } else null
             }
 
             val result = StorageAnalysisResult(

@@ -68,6 +68,7 @@ object StorageFormatter {
     )
 
     private val DOCUMENT_EXTENSIONS = setOf(
-        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv", "json", "xml", "epub"
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv", "json", "xml", "epub",
+        "zip", "rar", "tar", "gz", "7z"
     )
 }

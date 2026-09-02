@@ -15,6 +15,7 @@ import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
 import com.aistudio.cleanmind.app.util.StorageFormatter
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,8 @@ import kotlinx.coroutines.launch
 class HomeViewModel(
     application: Application,
     private val getDeviceStorageStatsUseCase: GetDeviceStorageStatsUseCase,
-    private val analyzeStorageUseCase: AnalyzeStorageUseCase
+    private val analyzeStorageUseCase: AnalyzeStorageUseCase,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -36,7 +38,7 @@ class HomeViewModel(
     }
 
     fun loadDeviceStorageStats() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             val stats = getDeviceStorageStatsUseCase()
             if (stats.totalBytes > 0) {
                 _uiState.update { state ->
@@ -70,7 +72,7 @@ class HomeViewModel(
     }
 
     fun startStorageAnalysis() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             _uiState.update { it.copy(status = AnalysisStatus.Analyzing) }
 
             val result = analyzeStorageUseCase()
