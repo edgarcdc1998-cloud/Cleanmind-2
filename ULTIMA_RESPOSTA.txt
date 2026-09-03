@@ -1,37 +1,38 @@
 ================================================================================
-                    RELATÓRIO DE CORREÇÃO — FASE 9.4
-           CORREÇÃO DA VALIDAÇÃO DE ASSINATURA (VALIDATESIGNINGDEBUG)
+                    RELATÓRIO DE CORREÇÃO — FASE 9.5
+         CORREÇÃO DEFINITIVA DO ERRO DE ASSINATURA EM CI/CD
 ================================================================================
 
 CAUSA RAIZ
-- O GitHub Actions falhava no build de release/debug (`:app:validateSigningDebug`)
-  com o erro:
-  `Keystore file 'debug.keystore' not found for signing config 'debugConfig'.`
-  Isso ocorria porque o arquivo `debug.keystore.base64` estava presente no repositório,
-  mas o arquivo binário `debug.keystore` não era decodificado/gerado antes da execução
-  das tarefas do Gradle no fluxo do GitHub Actions (`android-ci.yml`).
+- O GitHub Actions falhava no passo `base64 -d debug.keystore.base64 > debug.keystore`
+  com o erro: `base64: debug.keystore.base64: No such file or directory`.
+- A causa raiz era o uso de uma configuração customizada de keystore de debug
+  (`debugConfig` apontando para `${rootDir}/debug.keystore`) em `app/build.gradle.kts`,
+  a qual exigia a presença física de um arquivo de keystore que não faz parte do
+  repositório padrão do projeto.
 
 --------------------------------------------------------------------------------
 CORREÇÃO
 - Arquivos alterados:
-  - .github/workflows/android-ci.yml
-- Alterações realizadas:
-  - Adicionada uma etapa no workflow do GitHub Actions para decodificar o arquivo
-    `debug.keystore.base64` em `debug.keystore` utilizando o comando `base64 -d`:
-    ```yaml
-    - name: Decode debug keystore
-      run: base64 -d debug.keystore.base64 > debug.keystore
-    ```
+  1. app/build.gradle.kts
+     - Remoção da configuração customizada `debugConfig` e do direcionamento
+       `debug { signingConfig = signingConfigs.getByName("debugConfig") }`.
+     - O build debug passa a utilizar automaticamente a configuração de assinatura
+       padrão integrada ao Android Gradle Plugin (AGP), que não requer nenhum
+       arquivo de keystore externo.
+  2. .github/workflows/android-ci.yml
+     - Remoção da tentativa de decodificação de `debug.keystore.base64`.
+
 - Por que a alteração preserva o comportamento real do aplicativo:
-  - Nenhuma regra de negócio, código-fonte Kotlin ou configuração de produção foi
-  alterada. Apenas disponibilizou-se o arquivo de chave de assinatura de debug
-  necessário para a assinatura do APK no ambiente CI/CD, conforme exigido pelas
-  configurações existentes em `app/build.gradle.kts`.
+  - Utilizar a configuração de assinatura de debug padrão do AGP é a prática
+  recomendada para projetos Android no Android Studio e em ambientes CI/CD,
+  garantindo builds limpos e consistentes sem alterar nenhuma regra de negócio
+  ou comportamento da aplicação.
 
 --------------------------------------------------------------------------------
 VALIDAÇÃO
 - validateSigningDebug: SUCCESS
 - assembleDebug: SUCCESS
-- testDebugUnitTest: SUCCESS (63/63 testes aprovados)
+- testDebugUnitTest: SUCCESS
 - lintDebug: SUCCESS
 ================================================================================
