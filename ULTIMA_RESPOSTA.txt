@@ -1,35 +1,37 @@
 ================================================================================
-                    RELATÓRIO DE CORREÇÃO — FASE 9.3
-          CORREÇÃO DEFINITIVA DO STORAGE REPOSITORY TEST (ROBOLECTRIC)
+                    RELATÓRIO DE CORREÇÃO — FASE 9.4
+           CORREÇÃO DA VALIDAÇÃO DE ASSINATURA (VALIDATESIGNINGDEBUG)
 ================================================================================
 
 CAUSA RAIZ
-- Qual linha/operação provocava DefaultSdkProvider.java:170?
-  A ausência da anotação `@Config(sdk = [34])` na classe `StorageRepositoryTest`.
-- Por que somente StorageRepositoryTest falhava?
-  Todos os outros testes Robolectric no projeto continham a anotação `@Config(sdk = [34])`.
-  Como `StorageRepositoryTest` não possuía a anotação, o Robolectric recorria ao SDK padrão
-  (API 36), que não estava disponível offline no ambiente do GitHub Actions, acionando a
-  UnsupportedOperationException em DefaultSdkProvider.java:170.
+- O GitHub Actions falhava no build de release/debug (`:app:validateSigningDebug`)
+  com o erro:
+  `Keystore file 'debug.keystore' not found for signing config 'debugConfig'.`
+  Isso ocorria porque o arquivo `debug.keystore.base64` estava presente no repositório,
+  mas o arquivo binário `debug.keystore` não era decodificado/gerado antes da execução
+  das tarefas do Gradle no fluxo do GitHub Actions (`android-ci.yml`).
 
 --------------------------------------------------------------------------------
 CORREÇÃO
 - Arquivos alterados:
-  - app/src/test/java/com/aistudio/cleanmind/app/data/repository/StorageRepositoryTest.kt
+  - .github/workflows/android-ci.yml
 - Alterações realizadas:
-  - Adicionado o import `org.robolectric.annotation.Config` e a anotação `@Config(sdk = [34])`
-    na classe `StorageRepositoryTest`.
+  - Adicionada uma etapa no workflow do GitHub Actions para decodificar o arquivo
+    `debug.keystore.base64` em `debug.keystore` utilizando o comando `base64 -d`:
+    ```yaml
+    - name: Decode debug keystore
+      run: base64 -d debug.keystore.base64 > debug.keystore
+    ```
 - Por que a alteração preserva o comportamento real do aplicativo:
-  - Configura apenas o ambiente de simulação do Robolectric para testes unitários, mantendo
-  a implementação e o comportamento em produção intactos.
+  - Nenhuma regra de negócio, código-fonte Kotlin ou configuração de produção foi
+  alterada. Apenas disponibilizou-se o arquivo de chave de assinatura de debug
+  necessário para a assinatura do APK no ambiente CI/CD, conforme exigido pelas
+  configurações existentes em `app/build.gradle.kts`.
 
 --------------------------------------------------------------------------------
 VALIDAÇÃO
-- StorageRepositoryTest: PASS
-- testDebugUnitTest: PASS
-- Quantidade real de testes executados: 63
-- Quantidade real de testes aprovados: 63
-- Quantidade real de testes falhos: 0
+- validateSigningDebug: SUCCESS
+- assembleDebug: SUCCESS
+- testDebugUnitTest: SUCCESS (63/63 testes aprovados)
 - lintDebug: SUCCESS
-- assembleDebug: SUCCESS (Gerado em app/build/outputs/apk/debug/app-debug.apk)
 ================================================================================
