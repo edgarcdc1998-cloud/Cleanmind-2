@@ -4,11 +4,15 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PieChartOutline
 import androidx.compose.material.icons.outlined.Settings
@@ -49,11 +53,25 @@ sealed class CleanMindDestination(
         unselectedIcon = Icons.Outlined.PieChartOutline
     )
 
+    data object History : CleanMindDestination(
+        route = "history",
+        titleRes = R.string.nav_history,
+        selectedIcon = Icons.Filled.History,
+        unselectedIcon = Icons.Outlined.History
+    )
+
     data object Settings : CleanMindDestination(
         route = "settings",
         titleRes = R.string.nav_settings,
         selectedIcon = Icons.Filled.Settings,
         unselectedIcon = Icons.Outlined.Settings
+    )
+
+    data object CleanupCenter : CleanMindDestination(
+        route = "cleanup_center",
+        titleRes = R.string.cleanup_center_header,
+        selectedIcon = Icons.Filled.DeleteForever,
+        unselectedIcon = Icons.Outlined.DeleteForever
     )
 
     companion object {
@@ -63,6 +81,7 @@ sealed class CleanMindDestination(
                 Analysis,
                 Recommendations,
                 Storage,
+                History,
                 Settings
             )
     }

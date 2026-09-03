@@ -45,7 +45,9 @@ data class HomeUiState(
     val showSettingsDialog: Boolean = false,
     val showPermissionRationaleDialog: Boolean = false,
     val selectedRecommendationIds: Set<Long> = emptySet(),
-    val showReviewConfirmationDialog: Boolean = false
+    val showReviewConfirmationDialog: Boolean = false,
+    val isDeleting: Boolean = false,
+    val deletionSummary: DeletionSummaryUi? = null
 ) {
     val isAnalyzed: Boolean
         get() = status is AnalysisStatus.Success || status is AnalysisStatus.Saved || hasSavedAnalysis
@@ -83,3 +85,10 @@ data class HomeUiState(
     val potentialReclaimableSpaceFormatted: String?
         get() = recommendationsSummary?.potentialReclaimableBytes?.let { StorageFormatter.formatBytes(it) }
 }
+
+data class DeletionSummaryUi(
+    val deletedCount: Int,
+    val reclaimedBytes: Long,
+    val reclaimedSpaceFormatted: String,
+    val failedFileNames: List<String>
+)

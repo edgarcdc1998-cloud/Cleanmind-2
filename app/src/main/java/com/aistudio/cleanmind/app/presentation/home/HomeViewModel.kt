@@ -15,8 +15,10 @@ import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.repository.SettingsRepository
 import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
+import com.aistudio.cleanmind.app.domain.usecase.ClearAnalysisHistoryUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetLatestAnalysisUseCase
+import com.aistudio.cleanmind.app.domain.usecase.DeleteSelectedFilesUseCase
 import com.aistudio.cleanmind.app.util.StorageFormatter
 import com.aistudio.cleanmind.app.worker.WorkManagerScheduler
 import kotlinx.coroutines.CoroutineDispatcher
@@ -33,7 +35,9 @@ class HomeViewModel(
     private val analyzeStorageUseCase: AnalyzeStorageUseCase,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val getLatestAnalysisUseCase: GetLatestAnalysisUseCase? = null,
-    private val settingsRepository: SettingsRepository? = null
+    private val clearAnalysisHistoryUseCase: ClearAnalysisHistoryUseCase? = null,
+    private val settingsRepository: SettingsRepository? = null,
+    private val deleteSelectedFilesUseCase: DeleteSelectedFilesUseCase? = null
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -358,6 +362,60 @@ class HomeViewModel(
         _uiState.update { it.copy(showReviewConfirmationDialog = false) }
     }
 
+    fun executeSelectedCleanup() {
+        val useCase = deleteSelectedFilesUseCase ?: return
+        val recommendations = uiState.value.selectedRecommendations
+        if (recommendations.isEmpty()) return
+
+        _uiState.update { it.copy(isDeleting = true) }
+
+        viewModelScope.launch(ioDispatcher) {
+            useCase(recommendations).onSuccess { summary ->
+                _uiState.update { state ->
+                    state.copy(
+                        isDeleting = false,
+                        deletionSummary = DeletionSummaryUi(
+                            deletedCount = summary.deletedCount,
+                            reclaimedBytes = summary.reclaimedBytes,
+                            reclaimedSpaceFormatted = StorageFormatter.formatBytes(summary.reclaimedBytes),
+                            failedFileNames = summary.failedFileNames
+                        )
+                    )
+                }
+                // Clear selection and refresh stats
+                onClearRecommendationSelection()
+                loadDeviceStorageStats()
+                startStorageAnalysis()
+            }.onFailure {
+                _uiState.update { it.copy(isDeleting = false) }
+            }
+        }
+    }
+
+    fun clearDeletionSummary() {
+        _uiState.update { it.copy(deletionSummary = null) }
+    }
+
+    fun clearHistory() {
+        val useCase = clearAnalysisHistoryUseCase ?: return
+        viewModelScope.launch(ioDispatcher) {
+            useCase().onSuccess {
+                _uiState.update { state ->
+                    state.copy(
+                        hasSavedAnalysis = false,
+                        lastAnalyzedEpochMillis = null,
+                        lastAnalyzedDateFormatted = null,
+                        totalFilesAnalyzed = 0,
+                        totalAnalyzedSpaceFormatted = null,
+                        categories = emptyList(),
+                        recommendationsSummary = null,
+                        status = AnalysisStatus.Idle
+                    )
+                }
+            }
+        }
+    }
+
     companion object {
         fun provideFactory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
@@ -370,7 +428,9 @@ class HomeViewModel(
                         getDeviceStorageStatsUseCase = container.getDeviceStorageStatsUseCase,
                         analyzeStorageUseCase = container.analyzeStorageUseCase,
                         getLatestAnalysisUseCase = container.getLatestAnalysisUseCase,
-                        settingsRepository = container.settingsRepository
+                        clearAnalysisHistoryUseCase = container.clearAnalysisHistoryUseCase,
+                        settingsRepository = container.settingsRepository,
+                        deleteSelectedFilesUseCase = container.deleteSelectedFilesUseCase
                     ) as T
                 }
             }

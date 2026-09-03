@@ -43,6 +43,7 @@ import com.aistudio.cleanmind.app.presentation.components.CleanMindBottomBar
 import com.aistudio.cleanmind.app.presentation.home.HomeScreen
 import com.aistudio.cleanmind.app.presentation.home.HomeViewModel
 import com.aistudio.cleanmind.app.presentation.screens.analysis.AnalysisScreen
+import com.aistudio.cleanmind.app.presentation.screens.history.HistoryScreen
 import com.aistudio.cleanmind.app.presentation.screens.recommendations.RecommendationsScreen
 import com.aistudio.cleanmind.app.presentation.screens.settings.SettingsScreen
 import com.aistudio.cleanmind.app.presentation.screens.storage.StorageScreen
@@ -157,8 +158,17 @@ fun CleanMindMainScreen(
                     onToggleSelection = { id -> viewModel.onToggleRecommendationSelection(id) },
                     onSelectAll = { viewModel.onSelectAllRecommendations() },
                     onClearSelection = { viewModel.onClearRecommendationSelection() },
-                    onShowReviewConfirmation = { viewModel.onShowReviewConfirmation() },
-                    onDismissReviewConfirmation = { viewModel.onDismissReviewConfirmation() }
+                    onNavigateToCleanupCenter = { navigateTo(CleanMindDestination.CleanupCenter) }
+                )
+            }
+
+            composable(CleanMindDestination.CleanupCenter.route) {
+                com.aistudio.cleanmind.app.presentation.screens.cleanup.CleanupCenterScreen(
+                    uiState = uiState,
+                    onNavigateBack = { navController.popBackStack() },
+                    onRemoveFromSelection = { id -> viewModel.onToggleRecommendationSelection(id) },
+                    onExecuteCleanup = { viewModel.executeSelectedCleanup() },
+                    onClearSuccessState = { viewModel.clearDeletionSummary() }
                 )
             }
 
@@ -166,6 +176,13 @@ fun CleanMindMainScreen(
                 StorageScreen(
                     uiState = uiState,
                     onAnalyzeStorage = { handleStartAnalysis() }
+                )
+            }
+
+            composable(CleanMindDestination.History.route) {
+                HistoryScreen(
+                    uiState = uiState,
+                    onClearHistory = { viewModel.clearHistory() }
                 )
             }
 

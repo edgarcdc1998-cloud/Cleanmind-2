@@ -651,7 +651,7 @@ private fun HeroOnboardingSection() {
         }
 
         Text(
-            text = "Pronto para começar?",
+            text = "Nenhuma análise realizada ainda.",
             fontSize = 18.sp,
             fontWeight = FontWeight.Medium,
             color = ElegantDarkTextPrimary,
@@ -659,7 +659,7 @@ private fun HeroOnboardingSection() {
         )
 
         Text(
-            text = "Inicie uma análise para identificar arquivos reais no dispositivo e entender a distribuição do seu armazenamento.",
+            text = "Inicie uma análise para identificar arquivos reais no dispositivo, calcular o espaço recuperável e entender a distribuição do seu armazenamento de forma segura e local.",
             fontSize = 14.sp,
             fontWeight = FontWeight.Normal,
             color = ElegantDarkTextMuted,

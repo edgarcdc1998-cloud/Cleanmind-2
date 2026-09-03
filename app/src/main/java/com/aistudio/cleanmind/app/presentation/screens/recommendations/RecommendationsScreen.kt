@@ -81,8 +81,7 @@ fun RecommendationsScreen(
     onToggleSelection: (Long) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
-    onShowReviewConfirmation: () -> Unit,
-    onDismissReviewConfirmation: () -> Unit,
+    onNavigateToCleanupCenter: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val summary = uiState.recommendationsSummary
@@ -114,7 +113,7 @@ fun RecommendationsScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Button(
-                            onClick = onShowReviewConfirmation,
+                            onClick = onNavigateToCleanupCenter,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .widthIn(max = 600.dp)
@@ -225,18 +224,6 @@ fun RecommendationsScreen(
                 }
             }
         }
-    }
-
-    if (uiState.showReviewConfirmationDialog && selectedCount > 0) {
-        ReviewConfirmationDialog(
-            selectedRecommendations = uiState.selectedRecommendations,
-            totalReclaimableFormatted = uiState.selectedReclaimableSpaceFormatted,
-            onConfirm = {
-                onDismissReviewConfirmation()
-                onClearSelection()
-            },
-            onDismiss = onDismissReviewConfirmation
-        )
     }
 }
 

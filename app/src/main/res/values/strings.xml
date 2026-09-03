@@ -77,6 +77,7 @@
     <string name="nav_analysis">Análise</string>
     <string name="nav_recommendations">Recomendações</string>
     <string name="nav_storage">Armazenamento</string>
+    <string name="nav_history">Histórico</string>
     <string name="nav_settings">Configurações</string>
 
     <!-- Storage Screen -->
@@ -113,4 +114,18 @@
     <string name="privacy_statement_3_desc">O CleanMind jamais deleta ou move qualquer arquivo automaticamente sem sua autorização explícita.</string>
     <string name="app_version_label">Versão 1.0 (Clean Architecture)</string>
     <string name="app_namespace_label">com.aistudio.cleanmind.app</string>
+
+    <!-- Safe Cleanup Center Strings -->
+    <string name="cleanup_center_header">Central de Limpeza</string>
+    <string name="cleanup_center_subtitle">Revise os arquivos selecionados antes da exclusão física</string>
+    <string name="cleanup_center_confirm_btn">Confirmar e Excluir (%1$s)</string>
+    <string name="cleanup_center_empty_title">Sem itens para exclusão</string>
+    <string name="cleanup_center_empty_desc">Vá para a aba Recomendações e selecione arquivos para revisão de limpeza.</string>
+    <string name="cleanup_center_warning">ATENÇÃO: Esta ação é irreversível. Os arquivos selecionados serão excluídos fisicamente do dispositivo.</string>
+    <string name="cleanup_center_success_title">Limpeza Concluída!</string>
+    <string name="cleanup_center_success_desc">Você liberou com sucesso %1$s de espaço em disco no seu dispositivo.</string>
+    <string name="cleanup_center_success_btn">Voltar ao Início</string>
+    <string name="cleanup_center_deleted_count">%1$d arquivos excluídos com sucesso</string>
+    <string name="cleanup_center_space_before_after">Antes vs. Depois da Limpeza</string>
+    <string name="cleanup_center_space_gain">Espaço a ser liberado: %1$s</string>
 </resources>

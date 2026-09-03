@@ -12,6 +12,7 @@ import com.aistudio.cleanmind.app.domain.repository.StorageRepository
 import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetLatestAnalysisUseCase
+import com.aistudio.cleanmind.app.domain.usecase.DeleteSelectedFilesUseCase
 import com.aistudio.cleanmind.app.presentation.home.AnalysisStatus
 import com.aistudio.cleanmind.app.presentation.home.HomeViewModel
 import kotlinx.coroutines.Dispatchers
@@ -353,5 +354,23 @@ class HomeViewModelTest {
 
         viewModel.onDismissReviewConfirmation()
         assertFalse(viewModel.uiState.value.showReviewConfirmationDialog)
+    }
+
+    @Test
+    fun executeSelectedCleanup_updatesState() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val deleteSelectedFilesUseCase = DeleteSelectedFilesUseCase(application, testDispatcher)
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher,
+            deleteSelectedFilesUseCase = deleteSelectedFilesUseCase
+        )
+        advanceUntilIdle()
+
+        viewModel.executeSelectedCleanup()
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.deletionSummary)
     }
 }

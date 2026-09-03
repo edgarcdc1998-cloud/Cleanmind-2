@@ -1,38 +1,35 @@
 ================================================================================
-                    RELATÓRIO DE CORREÇÃO — FASE 9.5
-         CORREÇÃO DEFINITIVA DO ERRO DE ASSINATURA EM CI/CD
+                    RELATÓRIO DE IMPLEMENTAÇÃO — FASE 10.4
+                 HISTÓRICO DETALHADO E ESTATÍSTICAS DE ARMAZENAMENTO
 ================================================================================
 
-CAUSA RAIZ
-- O GitHub Actions falhava no passo `base64 -d debug.keystore.base64 > debug.keystore`
-  com o erro: `base64: debug.keystore.base64: No such file or directory`.
-- A causa raiz era o uso de uma configuração customizada de keystore de debug
-  (`debugConfig` apontando para `${rootDir}/debug.keystore`) em `app/build.gradle.kts`,
-  a qual exigia a presença física de um arquivo de keystore que não faz parte do
-  repositório padrão do projeto.
+STATUS
+- Concluído com Sucesso
 
---------------------------------------------------------------------------------
-CORREÇÃO
-- Arquivos alterados:
-  1. app/build.gradle.kts
-     - Remoção da configuração customizada `debugConfig` e do direcionamento
-       `debug { signingConfig = signingConfigs.getByName("debugConfig") }`.
-     - O build debug passa a utilizar automaticamente a configuração de assinatura
-       padrão integrada ao Android Gradle Plugin (AGP), que não requer nenhum
-       arquivo de keystore externo.
-  2. .github/workflows/android-ci.yml
-     - Remoção da tentativa de decodificação de `debug.keystore.base64`.
+OBJETIVO
+- Implementar a tela de Histórico e Estatísticas de Armazenamento (HistoryScreen),
+  integrada ao ViewModel e ao Use Case ClearAnalysisHistoryUseCase, permitindo
+  visualizar o histórico persistido no Room e limpá-lo de forma segura.
 
-- Por que a alteração preserva o comportamento real do aplicativo:
-  - Utilizar a configuração de assinatura de debug padrão do AGP é a prática
-  recomendada para projetos Android no Android Studio e em ambientes CI/CD,
-  garantindo builds limpos e consistentes sem alterar nenhuma regra de negócio
-  ou comportamento da aplicação.
+ARQUIVOS CRIADOS E MODIFICADOS
+- app/src/main/java/com/aistudio/cleanmind/app/presentation/screens/history/HistoryScreen.kt (Novo)
+- app/src/main/java/com/aistudio/cleanmind/app/presentation/navigation/CleanMindDestination.kt
+- app/src/main/java/com/aistudio/cleanmind/app/presentation/navigation/CleanMindMainScreen.kt
+- app/src/main/java/com/aistudio/cleanmind/app/presentation/home/HomeViewModel.kt
+- app/src/main/java/com/aistudio/cleanmind/app/AppContainer.kt
+- app/src/main/res/values/strings.xml
+- app/src/test/java/com/aistudio/cleanmind/app/presentation/navigation/CleanMindNavigationTest.kt
 
---------------------------------------------------------------------------------
+ARQUITETURA E FUNCIONALIDADES
+- Clean Architecture + MVVM preservada rigorosamente.
+- Visualização de estatísticas detalhadas de varredura (data da última varredura,
+  total de arquivos escaneados, volume analisado e espaço recuperável).
+- Botão interativo para limpeza segura do histórico gravado no banco de dados local Room.
+- Nova rota de navegação e aba dedicada na barra inferior.
+
 VALIDAÇÃO
-- validateSigningDebug: SUCCESS
-- assembleDebug: SUCCESS
-- testDebugUnitTest: SUCCESS
-- lintDebug: SUCCESS
+- compile_applet: SUCESSO
+
+PRÓXIMO PASSO
+- Aguardar novas diretrizes do usuário.
 ================================================================================
