@@ -61,6 +61,10 @@ interface AnalysisDao {
     @Query("SELECT * FROM analysis_summaries ORDER BY timestampEpochMillis DESC LIMIT 1")
     fun getLatestAnalysisWithDetails(): Flow<AnalysisWithDetails?>
 
+    @Transaction
+    @Query("SELECT * FROM analysis_summaries ORDER BY timestampEpochMillis DESC")
+    fun getAllAnalysesWithDetails(): Flow<List<AnalysisWithDetails>>
+
     @Query("SELECT * FROM recommendations WHERE analysisId = :analysisId ORDER BY score DESC, reclaimableSizeBytes DESC")
     fun getRecommendations(analysisId: Long): Flow<List<RecommendationEntity>>
 

@@ -11,12 +11,14 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -33,55 +35,166 @@ class DeleteSelectedFilesUseCaseTest {
         useCase = DeleteSelectedFilesUseCase(context, testDispatcher)
     }
 
-    @Test
-    fun invoke_withSelectedRecommendations_returnsCorrectDeletionSummary() = runTest(testDispatcher) {
-        val file1 = StorageFile(
-            id = 1L,
-            name = "file1.png",
-            uri = "content://media/external/images/media/1",
-            sizeBytes = 1024L * 1024L,
-            mimeType = "image/png",
-            extension = "png",
-            dateModifiedEpochSeconds = 123456789L,
-            category = StorageCategory.IMAGES
+    private fun createRecommendation(
+        id: Long,
+        file: StorageFile,
+        type: RecommendationType = RecommendationType.TEMPORARY_FILE,
+        reclaimableBytes: Long = file.sizeBytes
+    ): CleanupRecommendation {
+        return CleanupRecommendation(
+            id = id,
+            file = file,
+            type = type,
+            priority = RecommendationPriority.HIGH,
+            score = 90,
+            reason = "Test recommendation",
+            reclaimableSizeBytes = reclaimableBytes
         )
-        val rec1 = CleanupRecommendation(
-            id = 101L,
-            file = file1,
-            type = RecommendationType.DUPLICATE,
-            priority = RecommendationPriority.MEDIUM,
-            score = 80,
-            reason = "Duplicado de file2.png",
-            reclaimableSizeBytes = 1024L * 1024L
-        )
+    }
 
-        val file2 = StorageFile(
-            id = 2L,
-            name = "large_temp.tmp",
-            uri = "content://media/external/files/2",
-            sizeBytes = 50 * 1024L * 1024L,
+    @Test
+    fun invoke_emptyList_returnsZeroCounts() = runTest(testDispatcher) {
+        val result = useCase(emptyList())
+        assertTrue(result.isSuccess)
+        val summary = result.getOrThrow()
+        assertEquals(0, summary.deletedCount)
+        assertEquals(0L, summary.reclaimedBytes)
+        assertTrue(summary.failedFileNames.isEmpty())
+    }
+
+    @Test
+    fun invoke_physicalFileExists_deletesRealFileAndReturnsSuccess() = runTest(testDispatcher) {
+        val tempFile = File(context.cacheDir, "real_delete_test.tmp")
+        tempFile.writeText("sample data to delete")
+        assertTrue(tempFile.exists())
+
+        val storageFile = StorageFile(
+            id = 1L,
+            name = "real_delete_test.tmp",
+            uri = tempFile.absolutePath,
+            sizeBytes = tempFile.length(),
             mimeType = "application/octet-stream",
             extension = "tmp",
-            dateModifiedEpochSeconds = 123456789L,
+            dateModifiedEpochSeconds = System.currentTimeMillis() / 1000L,
             category = StorageCategory.OTHERS
         )
-        val rec2 = CleanupRecommendation(
-            id = 102L,
-            file = file2,
-            type = RecommendationType.TEMPORARY_FILE,
-            priority = RecommendationPriority.HIGH,
-            score = 95,
-            reason = "Arquivo temporário grande",
-            reclaimableSizeBytes = 50 * 1024L * 1024L
+        val rec = createRecommendation(101L, storageFile)
+
+        val result = useCase(listOf(rec))
+        assertTrue(result.isSuccess)
+
+        val summary = result.getOrThrow()
+        assertEquals(1, summary.deletedCount)
+        assertEquals(storageFile.sizeBytes, summary.reclaimedBytes)
+        assertTrue(summary.failedFileNames.isEmpty())
+
+        // Confirm real disk state: file MUST NOT exist after deletion
+        assertFalse("O arquivo deve ter sido fisicamente excluído do disco", tempFile.exists())
+    }
+
+    @Test
+    fun invoke_nonExistentOrInaccessibleFile_doesNotDeclareFakeSuccess() = runTest(testDispatcher) {
+        val missingPath = File(context.cacheDir, "non_existent_file.tmp").absolutePath
+
+        val storageFile = StorageFile(
+            id = 2L,
+            name = "non_existent_file.tmp",
+            uri = missingPath,
+            sizeBytes = 2048L,
+            mimeType = "application/octet-stream",
+            extension = "tmp",
+            dateModifiedEpochSeconds = System.currentTimeMillis() / 1000L,
+            category = StorageCategory.OTHERS
+        )
+        val rec = createRecommendation(102L, storageFile)
+
+        val result = useCase(listOf(rec))
+        assertTrue(result.isSuccess)
+
+        val summary = result.getOrThrow()
+        // Must NEVER claim success for non-existent/un-deleted files
+        assertEquals(0, summary.deletedCount)
+        assertEquals(0L, summary.reclaimedBytes)
+        assertEquals(1, summary.failedFileNames.size)
+        assertEquals("non_existent_file.tmp", summary.failedFileNames.first())
+    }
+
+    @Test
+    fun invoke_partialSuccess_reportsAccurateCountsAndFailedList() = runTest(testDispatcher) {
+        val realFile = File(context.cacheDir, "success_file.tmp")
+        realFile.writeText("to be deleted")
+        assertTrue(realFile.exists())
+
+        val recSuccess = createRecommendation(
+            id = 201L,
+            file = StorageFile(
+                id = 10L,
+                name = "success_file.tmp",
+                uri = realFile.absolutePath,
+                sizeBytes = 1000L,
+                mimeType = "application/octet-stream",
+                extension = "tmp",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.OTHERS
+            ),
+            reclaimableBytes = 1000L
         )
 
-        val list = listOf(rec1, rec2)
-        val result = useCase(list)
+        val recFail = createRecommendation(
+            id = 202L,
+            file = StorageFile(
+                id = 11L,
+                name = "inaccessible_file.mp4",
+                uri = "content://media/external/video/media/99999",
+                sizeBytes = 5000L,
+                mimeType = "video/mp4",
+                extension = "mp4",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.VIDEOS
+            ),
+            reclaimableBytes = 5000L
+        )
 
+        val result = useCase(listOf(recSuccess, recFail))
         assertTrue(result.isSuccess)
-        val summary = result.getOrNull()
-        assertTrue(summary != null)
-        assertEquals(2, summary?.deletedCount)
-        assertEquals(51 * 1024L * 1024L, summary?.reclaimedBytes)
+
+        val summary = result.getOrThrow()
+        assertEquals(1, summary.deletedCount)
+        assertEquals(1000L, summary.reclaimedBytes)
+        assertEquals(1, summary.failedFileNames.size)
+        assertEquals("inaccessible_file.mp4", summary.failedFileNames.first())
+
+        assertFalse("Arquivo real deve ser removido", realFile.exists())
+    }
+
+    @Test
+    fun invoke_fileUriScheme_deletesSuccessfullyWhenPhysicalFileExists() = runTest(testDispatcher) {
+        val testFile = File(context.cacheDir, "scheme_test.tmp")
+        testFile.writeText("test file uri")
+        assertTrue(testFile.exists())
+
+        val rec = createRecommendation(
+            id = 301L,
+            file = StorageFile(
+                id = 20L,
+                name = "scheme_test.tmp",
+                uri = "file://${testFile.absolutePath}",
+                sizeBytes = 500L,
+                mimeType = "application/octet-stream",
+                extension = "tmp",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.OTHERS
+            ),
+            reclaimableBytes = 500L
+        )
+
+        val result = useCase(listOf(rec))
+        assertTrue(result.isSuccess)
+
+        val summary = result.getOrThrow()
+        assertEquals(1, summary.deletedCount)
+        assertEquals(500L, summary.reclaimedBytes)
+        assertTrue(summary.failedFileNames.isEmpty())
+        assertFalse(testFile.exists())
     }
 }

@@ -1,5 +1,12 @@
 package com.aistudio.cleanmind.app.presentation.screens.recommendations
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -43,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,7 +108,17 @@ fun RecommendationsScreen(
             )
         },
         bottomBar = {
-            if (selectedCount > 0) {
+            AnimatedVisibility(
+                visible = selectedCount > 0,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(durationMillis = 250)
+                ) + fadeIn(animationSpec = tween(durationMillis = 250)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(durationMillis = 200)
+                ) + fadeOut(animationSpec = tween(durationMillis = 200))
+            ) {
                 Surface(
                     color = ElegantDarkSurfaceCard,
                     shadowElevation = 8.dp,
@@ -455,6 +473,17 @@ private fun RecommendationCard(
     onToggleSelection: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val cardBgColor by animateColorAsState(
+        targetValue = if (isSelected) ElegantDarkSurfaceCard.copy(alpha = 0.95f) else ElegantDarkSurfaceCard,
+        animationSpec = tween(durationMillis = 200),
+        label = "cardBgColor"
+    )
+    val cardBorderColor by animateColorAsState(
+        targetValue = if (isSelected) ElegantDarkPrimary else Color.Transparent,
+        animationSpec = tween(durationMillis = 200),
+        label = "cardBorderColor"
+    )
+
     val typeIcon: ImageVector = when (recommendation.type) {
         RecommendationType.DUPLICATE -> Icons.Default.ContentCopy
         RecommendationType.LARGE_FILE -> Icons.Default.Storage
@@ -481,9 +510,9 @@ private fun RecommendationCard(
             .testTag("rec_item_${recommendation.id}"),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) ElegantDarkSurfaceCard.copy(alpha = 0.9f) else ElegantDarkSurfaceCard
+            containerColor = cardBgColor
         ),
-        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, ElegantDarkPrimary) else null
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, cardBorderColor)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

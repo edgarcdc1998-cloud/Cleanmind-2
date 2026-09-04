@@ -26,6 +26,8 @@ val ElegantDarkTextSecondary = Color(0xFFCAC4D0)
 val ElegantDarkTextMuted = Color(0xFF938F99)
 val ElegantDarkOutline = Color(0xFF79747E)
 val ElegantDarkTrack = Color(0xFF49454F)
+val ElegantDarkSurfaceElevated = Color(0xFF36343B)
+val SafeGreen = Color(0xFF81C784)
 
 // Light fallback / matching counterpart
 val ElegantLightBackground = Color(0xFFF7F2FA)

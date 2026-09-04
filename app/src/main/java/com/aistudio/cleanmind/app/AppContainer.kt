@@ -21,6 +21,7 @@ import com.aistudio.cleanmind.app.domain.usecase.GenerateCleanupRecommendationsU
 import com.aistudio.cleanmind.app.domain.usecase.ClearAnalysisHistoryUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetLatestAnalysisUseCase
+import com.aistudio.cleanmind.app.domain.usecase.GetStorageSavingsDashboardUseCase
 import com.aistudio.cleanmind.app.domain.usecase.DeleteSelectedFilesUseCase
 
 interface AppContainer {
@@ -39,6 +40,7 @@ interface AppContainer {
     val getDeviceStorageStatsUseCase: GetDeviceStorageStatsUseCase
     val analyzeStorageUseCase: AnalyzeStorageUseCase
     val getLatestAnalysisUseCase: GetLatestAnalysisUseCase
+    val getStorageSavingsDashboardUseCase: GetStorageSavingsDashboardUseCase
     val clearAnalysisHistoryUseCase: ClearAnalysisHistoryUseCase
     val deleteSelectedFilesUseCase: DeleteSelectedFilesUseCase
 }
@@ -107,6 +109,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val getLatestAnalysisUseCase: GetLatestAnalysisUseCase by lazy {
         GetLatestAnalysisUseCase(historyRepository)
+    }
+
+    override val getStorageSavingsDashboardUseCase: GetStorageSavingsDashboardUseCase by lazy {
+        GetStorageSavingsDashboardUseCase(historyRepository)
     }
 
     override val clearAnalysisHistoryUseCase: ClearAnalysisHistoryUseCase by lazy {

@@ -128,4 +128,32 @@
     <string name="cleanup_center_deleted_count">%1$d arquivos excluídos com sucesso</string>
     <string name="cleanup_center_space_before_after">Antes vs. Depois da Limpeza</string>
     <string name="cleanup_center_space_gain">Espaço a ser liberado: %1$s</string>
+    <string name="cleanup_center_partial_title">Limpeza Concluída Parcialmente</string>
+    <string name="cleanup_center_partial_desc">%1$d arquivo(s) excluído(s) (%2$s liberados), mas %3$d arquivo(s) não puderam ser excluídos pelo sistema.</string>
+    <string name="cleanup_center_failed_title">Falha na Exclusão</string>
+    <string name="cleanup_center_failed_desc">Nenhum dos arquivos selecionados pôde ser excluído. O sistema Android pode ter bloqueado a exclusão por restrições de permissão ou escopo.</string>
+    <string name="cleanup_center_failed_files_header">Arquivos que não puderam ser excluídos:</string>
+
+    <!-- Storage Savings Dashboard Strings -->
+    <string name="dashboard_title">Economia de Armazenamento</string>
+    <string name="dashboard_subtitle">Estatísticas e tendências históricas salvas no Room</string>
+    <string name="dashboard_total_analyses">%1$d análises salvas localmente</string>
+    <string name="dashboard_one_analysis">1 análise salva localmente</string>
+    <string name="dashboard_metric_analyzed">Volume Analisado</string>
+    <string name="dashboard_metric_analyzed_desc">Volume total de dados processados pelo CleanMind</string>
+    <string name="dashboard_metric_potential">Potencial de Recuperação</string>
+    <string name="dashboard_metric_potential_desc">Estimativa com base nas recomendações identificadas</string>
+    <string name="dashboard_metric_executed">Economia Realizada</string>
+    <string name="dashboard_metric_executed_status">Não rastreado no histórico</string>
+    <string name="dashboard_metric_executed_desc">O CleanMind executa exclusões físicas exclusivamente na Central de Limpeza com sua confirmação. O histórico atual armazena metadados de varredura.</string>
+    <string name="dashboard_trend_title">Evolução Temporal do Armazenamento</string>
+    <string name="dashboard_single_observation_notice">Apenas 1 registro histórico disponível. São necessárias ao menos 2 varreduras gravadas no Room para exibir gráficos de evolução e tendências temporais.</string>
+    <string name="dashboard_empty_title">Nenhum Histórico Registrado</string>
+    <string name="dashboard_empty_desc">Execute uma varredura de armazenamento na aba Início para iniciar o acompanhamento histórico e métricas de economia.</string>
+    <string name="dashboard_clear_dialog_title">Limpar Histórico de Análises?</string>
+    <string name="dashboard_clear_dialog_desc">Todos os registros de varredura e recomendações salvas localmente no banco de dados Room serão apagados permanentemente. Nenhum arquivo do dispositivo será excluído.</string>
+    <string name="dashboard_btn_clear_confirm">Limpar Histórico</string>
+    <string name="dashboard_filter_observations">Varreduras</string>
+    <string name="dashboard_filter_weekly">Semanal</string>
+    <string name="dashboard_filter_monthly">Mensal</string>
 </resources>

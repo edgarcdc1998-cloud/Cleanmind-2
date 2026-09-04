@@ -43,6 +43,7 @@ import com.aistudio.cleanmind.app.presentation.components.CleanMindBottomBar
 import com.aistudio.cleanmind.app.presentation.home.HomeScreen
 import com.aistudio.cleanmind.app.presentation.home.HomeViewModel
 import com.aistudio.cleanmind.app.presentation.screens.analysis.AnalysisScreen
+import com.aistudio.cleanmind.app.presentation.screens.dashboard.StorageSavingsDashboardScreen
 import com.aistudio.cleanmind.app.presentation.screens.history.HistoryScreen
 import com.aistudio.cleanmind.app.presentation.screens.recommendations.RecommendationsScreen
 import com.aistudio.cleanmind.app.presentation.screens.settings.SettingsScreen
@@ -180,8 +181,7 @@ fun CleanMindMainScreen(
             }
 
             composable(CleanMindDestination.History.route) {
-                HistoryScreen(
-                    uiState = uiState,
+                StorageSavingsDashboardScreen(
                     onClearHistory = { viewModel.clearHistory() }
                 )
             }

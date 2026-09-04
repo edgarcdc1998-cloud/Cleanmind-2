@@ -115,4 +115,32 @@ class AnalysisHistoryRepositoryTest {
         assertTrue(clearResult.isSuccess)
         assertNull(repository.getLatestAnalysis().first())
     }
+
+    @Test
+    fun getAllAnalyses_returnsAllPersistedAnalyses() = runTest(testDispatcher) {
+        val analysis1 = StorageAnalysisResult(
+            totalFilesCount = 2,
+            totalAnalyzedSizeBytes = 2000L,
+            categorySummaries = emptyList(),
+            files = emptyList(),
+            deviceStorageStats = DeviceStorageStats(100000L, 60000L, 40000L),
+            timestampEpochMillis = 1000L
+        )
+        val analysis2 = StorageAnalysisResult(
+            totalFilesCount = 4,
+            totalAnalyzedSizeBytes = 5000L,
+            categorySummaries = emptyList(),
+            files = emptyList(),
+            deviceStorageStats = DeviceStorageStats(100000L, 57000L, 43000L),
+            timestampEpochMillis = 2000L
+        )
+
+        repository.saveAnalysis(analysis1)
+        repository.saveAnalysis(analysis2)
+
+        val list = repository.getAllAnalyses().first()
+        assertEquals(2, list.size)
+        assertEquals(2000L, list[0].timestampEpochMillis) // Ordered DESC
+        assertEquals(1000L, list[1].timestampEpochMillis)
+    }
 }

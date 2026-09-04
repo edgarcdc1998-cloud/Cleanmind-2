@@ -5,6 +5,7 @@ import com.aistudio.cleanmind.app.data.local.entity.AnalysisSummaryEntity
 import com.aistudio.cleanmind.app.data.local.entity.CategorySummaryEntity
 import com.aistudio.cleanmind.app.data.local.entity.RecommendationEntity
 import com.aistudio.cleanmind.app.data.local.entity.ScannedFileEntity
+import com.aistudio.cleanmind.app.data.local.entity.AnalysisWithDetails
 import com.aistudio.cleanmind.app.domain.model.AnalysisRecommendationsSummary
 import com.aistudio.cleanmind.app.domain.model.CategorySummary
 import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
@@ -12,6 +13,7 @@ import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
 import com.aistudio.cleanmind.app.domain.model.DuplicateGroup
 import com.aistudio.cleanmind.app.domain.model.RecommendationType
 import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
+import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.model.StorageFile
 import com.aistudio.cleanmind.app.domain.repository.AnalysisHistoryRepository
 import com.aistudio.cleanmind.app.util.StorageFormatter
@@ -29,87 +31,93 @@ class AnalysisHistoryRepositoryImpl(
 
     override fun getLatestAnalysis(): Flow<StorageAnalysisResult?> {
         return analysisDao.getLatestAnalysisWithDetails()
-            .map { withDetails ->
-                withDetails?.let { item ->
-                    val summary = item.summary
-                    val stats = DeviceStorageStats(
-                        totalBytes = summary.deviceTotalBytes,
-                        freeBytes = summary.deviceFreeBytes,
-                        usedBytes = summary.deviceUsedBytes
-                    )
-                    val categories = item.categories.map { catEntity ->
-                        CategorySummary(
-                            category = catEntity.category,
-                            fileCount = catEntity.fileCount,
-                            totalSizeBytes = catEntity.totalSizeBytes
-                        )
-                    }
+            .map { withDetails -> withDetails?.let { mapToStorageAnalysisResult(it) } }
+            .flowOn(ioDispatcher)
+    }
 
-                    val recommendations = item.recommendations.map { rec ->
-                        CleanupRecommendation(
-                            id = rec.id,
-                            file = StorageFile(
-                                id = rec.fileId,
-                                name = rec.fileName,
-                                uri = rec.fileUri,
-                                sizeBytes = rec.fileSizeBytes,
-                                mimeType = "",
-                                extension = StorageFormatter.extractExtension(rec.fileName),
-                                dateModifiedEpochSeconds = 0L,
-                                category = rec.category
-                            ),
-                            type = rec.type,
-                            priority = rec.priority,
-                            score = rec.score,
-                            reason = rec.reason,
-                            reclaimableSizeBytes = rec.reclaimableSizeBytes,
-                            duplicateGroupId = rec.duplicateGroupId
-                        )
-                    }
+    override fun getAllAnalyses(): Flow<List<StorageAnalysisResult>> {
+        return analysisDao.getAllAnalysesWithDetails()
+            .map { list -> list.map { mapToStorageAnalysisResult(it) } }
+            .flowOn(ioDispatcher)
+    }
 
-                    val recommendationsSummary = if (recommendations.isNotEmpty()) {
-                        val duplicateGroups = recommendations
-                            .filter { it.type == RecommendationType.DUPLICATE && it.duplicateGroupId != null }
-                            .groupBy { it.duplicateGroupId!! }
-                            .map { (groupId, recs) ->
-                                val files = recs.map { it.file }
-                                val singleSize = recs.firstOrNull()?.reclaimableSizeBytes ?: 0L
-                                DuplicateGroup(
-                                    groupId = groupId,
-                                    totalSizeBytes = (files.size + 1) * singleSize,
-                                    reclaimableSizeBytes = files.size * singleSize,
-                                    files = files
-                                )
-                            }
+    private fun mapToStorageAnalysisResult(item: AnalysisWithDetails): StorageAnalysisResult {
+        val summary = item.summary
+        val stats = DeviceStorageStats(
+            totalBytes = summary.deviceTotalBytes,
+            freeBytes = summary.deviceFreeBytes,
+            usedBytes = summary.deviceUsedBytes
+        )
+        val categories = item.categories.map { catEntity ->
+            CategorySummary(
+                category = catEntity.category,
+                fileCount = catEntity.fileCount,
+                totalSizeBytes = catEntity.totalSizeBytes
+            )
+        }
 
-                        AnalysisRecommendationsSummary(
-                            totalRecommendationsCount = recommendations.size,
-                            potentialReclaimableBytes = recommendations.sumOf { it.reclaimableSizeBytes },
-                            largeFilesCount = recommendations.count { it.type == RecommendationType.LARGE_FILE },
-                            duplicateFilesCount = recommendations.count { it.type == RecommendationType.DUPLICATE },
-                            duplicateGroupsCount = duplicateGroups.size,
-                            oldFilesCount = recommendations.count { it.type == RecommendationType.OLD_FILE },
-                            temporaryFilesCount = recommendations.count { it.type == RecommendationType.TEMPORARY_FILE },
-                            recommendations = recommendations,
-                            duplicateGroups = duplicateGroups
-                        )
-                    } else {
-                        null
-                    }
+        val recommendations = item.recommendations.map { rec ->
+            CleanupRecommendation(
+                id = rec.id,
+                file = StorageFile(
+                    id = rec.fileId,
+                    name = rec.fileName,
+                    uri = rec.fileUri,
+                    sizeBytes = rec.fileSizeBytes,
+                    mimeType = "",
+                    extension = StorageFormatter.extractExtension(rec.fileName),
+                    dateModifiedEpochSeconds = 0L,
+                    category = rec.category
+                ),
+                type = rec.type,
+                priority = rec.priority,
+                score = rec.score,
+                reason = rec.reason,
+                reclaimableSizeBytes = rec.reclaimableSizeBytes,
+                duplicateGroupId = rec.duplicateGroupId
+            )
+        }
 
-                    StorageAnalysisResult(
-                        id = summary.id,
-                        totalFilesCount = summary.totalFilesCount,
-                        totalAnalyzedSizeBytes = summary.totalAnalyzedSizeBytes,
-                        categorySummaries = categories,
-                        files = emptyList(),
-                        deviceStorageStats = stats,
-                        timestampEpochMillis = summary.timestampEpochMillis,
-                        recommendationsSummary = recommendationsSummary
+        val recommendationsSummary = if (recommendations.isNotEmpty()) {
+            val duplicateGroups = recommendations
+                .filter { it.type == RecommendationType.DUPLICATE && it.duplicateGroupId != null }
+                .groupBy { it.duplicateGroupId!! }
+                .map { (groupId, recs) ->
+                    val files = recs.map { it.file }
+                    val singleSize = recs.firstOrNull()?.reclaimableSizeBytes ?: 0L
+                    DuplicateGroup(
+                        groupId = groupId,
+                        totalSizeBytes = (files.size + 1) * singleSize,
+                        reclaimableSizeBytes = files.size * singleSize,
+                        files = files
                     )
                 }
-            }
-            .flowOn(ioDispatcher)
+
+            AnalysisRecommendationsSummary(
+                totalRecommendationsCount = recommendations.size,
+                potentialReclaimableBytes = recommendations.sumOf { it.reclaimableSizeBytes },
+                largeFilesCount = recommendations.count { it.type == RecommendationType.LARGE_FILE },
+                duplicateFilesCount = recommendations.count { it.type == RecommendationType.DUPLICATE },
+                duplicateGroupsCount = duplicateGroups.size,
+                oldFilesCount = recommendations.count { it.type == RecommendationType.OLD_FILE },
+                temporaryFilesCount = recommendations.count { it.type == RecommendationType.TEMPORARY_FILE },
+                recommendations = recommendations,
+                duplicateGroups = duplicateGroups
+            )
+        } else {
+            null
+        }
+
+        return StorageAnalysisResult(
+            id = summary.id,
+            totalFilesCount = summary.totalFilesCount,
+            totalAnalyzedSizeBytes = summary.totalAnalyzedSizeBytes,
+            categorySummaries = categories,
+            files = emptyList(),
+            deviceStorageStats = stats,
+            timestampEpochMillis = summary.timestampEpochMillis,
+            recommendationsSummary = recommendationsSummary
+        )
     }
 
     override suspend fun saveAnalysis(result: StorageAnalysisResult): Result<Long> = withContext(ioDispatcher) {

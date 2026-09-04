@@ -1,10 +1,13 @@
 package com.aistudio.cleanmind.app.presentation.screens.cleanup
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -119,30 +122,44 @@ fun CleanupCenterScreen(
                     .widthIn(max = 600.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                when {
-                    deletionSummary != null -> {
-                        SuccessView(
-                            summary = deletionSummary,
-                            onFinish = {
-                                onClearSuccessState()
-                                onNavigateBack()
-                            }
-                        )
-                    }
-                    isDeleting -> {
-                        DeletingProgressView()
-                    }
-                    selectedItems.isEmpty() -> {
-                        EmptyQueueView(onGoBack = onNavigateBack)
-                    }
-                    else -> {
-                        ActiveReviewView(
-                            selectedItems = selectedItems,
-                            reclaimableBytes = uiState.selectedReclaimableBytes,
-                            reclaimableSpaceFormatted = uiState.selectedReclaimableSpaceFormatted,
-                            onRemoveItem = onRemoveFromSelection,
-                            onConfirmCleanup = onExecuteCleanup
-                        )
+                AnimatedContent(
+                    targetState = when {
+                        deletionSummary != null -> CleanupState.SUCCESS
+                        isDeleting -> CleanupState.DELETING
+                        selectedItems.isEmpty() -> CleanupState.EMPTY
+                        else -> CleanupState.REVIEW
+                    },
+                    transitionSpec = {
+                        fadeIn(animationSpec = tween(durationMillis = 220)) togetherWith
+                                fadeOut(animationSpec = tween(durationMillis = 180))
+                    },
+                    label = "cleanupStateTransition"
+                ) { state ->
+                    when (state) {
+                        CleanupState.SUCCESS -> {
+                            SuccessView(
+                                summary = deletionSummary!!,
+                                onFinish = {
+                                    onClearSuccessState()
+                                    onNavigateBack()
+                                }
+                            )
+                        }
+                        CleanupState.DELETING -> {
+                            DeletingProgressView()
+                        }
+                        CleanupState.EMPTY -> {
+                            EmptyQueueView(onGoBack = onNavigateBack)
+                        }
+                        CleanupState.REVIEW -> {
+                            ActiveReviewView(
+                                selectedItems = selectedItems,
+                                reclaimableBytes = uiState.selectedReclaimableBytes,
+                                reclaimableSpaceFormatted = uiState.selectedReclaimableSpaceFormatted,
+                                onRemoveItem = onRemoveFromSelection,
+                                onConfirmCleanup = onExecuteCleanup
+                            )
+                        }
                     }
                 }
             }
@@ -354,100 +371,180 @@ private fun SuccessView(
     summary: com.aistudio.cleanmind.app.presentation.home.DeletionSummaryUi,
     onFinish: () -> Unit
 ) {
-    Column(
+    val isFullSuccess = summary.deletedCount > 0 && summary.failedFileNames.isEmpty()
+    val isPartialSuccess = summary.deletedCount > 0 && summary.failedFileNames.isNotEmpty()
+    val isFailure = summary.deletedCount == 0 && summary.failedFileNames.isNotEmpty()
+
+    val headerIcon = when {
+        isFailure -> Icons.Default.Info
+        isPartialSuccess -> Icons.Default.Info
+        else -> Icons.Default.CheckCircle
+    }
+
+    val iconColor = when {
+        isFailure -> Color(0xFFEF5350)
+        isPartialSuccess -> Color(0xFFFFB74D)
+        else -> ElegantDarkPrimary
+    }
+
+    val title = when {
+        isFailure -> stringResource(id = R.string.cleanup_center_failed_title)
+        isPartialSuccess -> stringResource(id = R.string.cleanup_center_partial_title)
+        else -> stringResource(id = R.string.cleanup_center_success_title)
+    }
+
+    val description = when {
+        isFailure -> stringResource(id = R.string.cleanup_center_failed_desc)
+        isPartialSuccess -> stringResource(
+            id = R.string.cleanup_center_partial_desc,
+            summary.deletedCount,
+            summary.reclaimedSpaceFormatted,
+            summary.failedFileNames.size
+        )
+        else -> stringResource(id = R.string.cleanup_center_success_desc, summary.reclaimedSpaceFormatted)
+    }
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = 60.dp),
+            .padding(top = 40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .clip(CircleShape)
-                .background(ElegantDarkPrimary.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = ElegantDarkPrimary,
-                modifier = Modifier.size(44.dp)
-            )
-        }
-
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = stringResource(id = R.string.cleanup_center_success_title),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = ElegantDarkTextPrimary,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = stringResource(id = R.string.cleanup_center_success_desc, summary.reclaimedSpaceFormatted),
-                fontSize = 14.sp,
-                color = ElegantDarkTextSecondary,
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(horizontal = 20.dp)
-            )
-        }
-
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = ElegantDarkSurfaceCard,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.padding(18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        item {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(iconColor.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Storage,
-                        contentDescription = null,
-                        tint = ElegantDarkPrimary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Text(
-                        text = stringResource(id = R.string.cleanup_center_deleted_count, summary.deletedCount),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = ElegantDarkTextPrimary
-                    )
-                }
-
-                Text(
-                    text = summary.reclaimedSpaceFormatted,
-                    fontSize = 14.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = ElegantDarkPrimary
+                Icon(
+                    imageVector = headerIcon,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(44.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        item {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = ElegantDarkTextPrimary,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = description,
+                    fontSize = 14.sp,
+                    color = ElegantDarkTextSecondary,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
+            }
+        }
 
-        Button(
-            onClick = onFinish,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(54.dp)
-                .testTag("cleanup_success_done_btn"),
-            shape = RoundedCornerShape(27.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = ElegantDarkPrimary,
-                contentColor = Color.Black
-            )
-        ) {
-            Text(
-                text = stringResource(id = R.string.cleanup_center_success_btn),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
+        if (summary.deletedCount > 0) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = ElegantDarkSurfaceCard,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(18.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Storage,
+                                contentDescription = null,
+                                tint = ElegantDarkPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Text(
+                                text = stringResource(id = R.string.cleanup_center_deleted_count, summary.deletedCount),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = ElegantDarkTextPrimary
+                            )
+                        }
+
+                        Text(
+                            text = summary.reclaimedSpaceFormatted,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = ElegantDarkPrimary
+                        )
+                    }
+                }
+            }
+        }
+
+        if (summary.failedFileNames.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = ElegantDarkSurfaceCard)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.cleanup_center_failed_files_header),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFEF5350)
+                        )
+                        summary.failedFileNames.forEach { name ->
+                            Text(
+                                text = "• $name",
+                                fontSize = 12.sp,
+                                color = ElegantDarkTextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+                onClick = onFinish,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .testTag("cleanup_success_done_btn"),
+                shape = RoundedCornerShape(27.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ElegantDarkPrimary,
+                    contentColor = Color.Black
+                )
+            ) {
+                Text(
+                    text = stringResource(id = R.string.cleanup_center_success_btn),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }
@@ -510,4 +607,8 @@ private fun EmptyQueueView(onGoBack: () -> Unit) {
             Text(text = "Voltar", fontWeight = FontWeight.Bold)
         }
     }
+}
+
+private enum class CleanupState {
+    REVIEW, DELETING, SUCCESS, EMPTY
 }

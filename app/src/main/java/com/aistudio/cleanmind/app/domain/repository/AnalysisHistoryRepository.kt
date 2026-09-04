@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface AnalysisHistoryRepository {
     fun getLatestAnalysis(): Flow<StorageAnalysisResult?>
+    fun getAllAnalyses(): Flow<List<StorageAnalysisResult>> = kotlinx.coroutines.flow.flowOf(emptyList())
     suspend fun saveAnalysis(result: StorageAnalysisResult): Result<Long>
     fun getFilesForAnalysis(analysisId: Long): Flow<List<StorageFile>>
     suspend fun clearHistory(): Result<Unit>

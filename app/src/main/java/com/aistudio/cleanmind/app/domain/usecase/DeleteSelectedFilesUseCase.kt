@@ -26,7 +26,8 @@ class DeleteSelectedFilesUseCase(
                     val deletedRows = context.contentResolver.delete(uri, null, null)
                     deleted = deletedRows > 0
                 } else {
-                    val file = File(uriString)
+                    val path = uriString.removePrefix("file://")
+                    val file = File(path)
                     if (file.exists()) {
                         deleted = file.delete()
                     }
@@ -45,10 +46,8 @@ class DeleteSelectedFilesUseCase(
                 } catch (_: Exception) {}
             }
 
-            // In local/sandbox/emulator mode, if deletion is simulated or physical file doesn't exist,
-            // we ALWAYS mark it as deleted to prevent dead-end UI and allow the user to see success state.
-            // This ensures a 100% reliable flow in the streaming web emulator.
-            if (deleted || !File(rec.file.uri).exists()) {
+            // Exclusão estrita sem simulação: apenas marcar sucesso se a operação física foi efetivamente confirmada
+            if (deleted) {
                 successCount++
                 successBytes += rec.reclaimableSizeBytes
             } else {
