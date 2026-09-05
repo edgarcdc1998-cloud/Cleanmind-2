@@ -373,4 +373,25 @@ class HomeViewModelTest {
         advanceUntilIdle()
         assertNull(viewModel.uiState.value.deletionSummary)
     }
+
+    @Test
+    fun onAuthorizationResult_refused_doesNotClearSelectionAndDoesNotReportFalseSuccess() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val deleteSelectedFilesUseCase = DeleteSelectedFilesUseCase(application, testDispatcher)
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher,
+            deleteSelectedFilesUseCase = deleteSelectedFilesUseCase
+        )
+        advanceUntilIdle()
+
+        // When user refuses authorization (approved = false)
+        viewModel.onAuthorizationResult(approved = false)
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.pendingIntentSender)
+        assertFalse(viewModel.uiState.value.isDeleting)
+    }
 }

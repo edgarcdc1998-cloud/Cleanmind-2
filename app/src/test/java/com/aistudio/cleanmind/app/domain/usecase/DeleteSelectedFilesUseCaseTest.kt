@@ -197,4 +197,134 @@ class DeleteSelectedFilesUseCaseTest {
         assertTrue(summary.failedFileNames.isEmpty())
         assertFalse(testFile.exists())
     }
+
+    @Test
+    fun relativePath_isNeverTreatedAsPhysicalPath() = runTest(testDispatcher) {
+        val physicalFile = File(context.cacheDir, "do_not_delete_me.tmp")
+        physicalFile.writeText("preserved content")
+        assertTrue(physicalFile.exists())
+
+        // File with a missing URI but relativePath pointing to physicalFile
+        val rec = createRecommendation(
+            id = 401L,
+            file = StorageFile(
+                id = 30L,
+                name = "dummy.tmp",
+                uri = "file:///non_existent/dummy.tmp",
+                sizeBytes = 300L,
+                mimeType = "application/octet-stream",
+                extension = "tmp",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.OTHERS,
+                relativePath = physicalFile.absolutePath
+            ),
+            reclaimableBytes = 300L
+        )
+
+        val result = useCase.execute(listOf(rec))
+        assertTrue(result is DeletionResult.Completed)
+        val summary = (result as DeletionResult.Completed).summary
+
+        assertEquals(0, summary.deletedCount)
+        assertEquals(1, summary.failedFileNames.size)
+        assertEquals("dummy.tmp", summary.failedFileNames.first())
+
+        // The physical file referenced in relativePath must NEVER have been touched or deleted
+        assertTrue("RELATIVE_PATH nunca deve ser tratado como caminho físico", physicalFile.exists())
+    }
+
+    @Test
+    fun verifyAndFinalizeAfterAuthorization_correctlyIdentifiesDeletedAndRemainingFiles() = runTest(testDispatcher) {
+        val deletedTempFile = File(context.cacheDir, "auth_deleted.tmp")
+        val remainingTempFile = File(context.cacheDir, "auth_remaining.tmp")
+        remainingTempFile.writeText("still present")
+        assertTrue(remainingTempFile.exists())
+        assertFalse(deletedTempFile.exists())
+
+        val recDeleted = createRecommendation(
+            id = 501L,
+            file = StorageFile(
+                id = 40L,
+                name = "auth_deleted.tmp",
+                uri = deletedTempFile.absolutePath,
+                sizeBytes = 1200L,
+                mimeType = "application/octet-stream",
+                extension = "tmp",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.OTHERS
+            ),
+            reclaimableBytes = 1200L
+        )
+
+        val recRemaining = createRecommendation(
+            id = 502L,
+            file = StorageFile(
+                id = 41L,
+                name = "auth_remaining.tmp",
+                uri = remainingTempFile.absolutePath,
+                sizeBytes = 800L,
+                mimeType = "application/octet-stream",
+                extension = "tmp",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.OTHERS
+            ),
+            reclaimableBytes = 800L
+        )
+
+        val initialDirectSummary = DeletionSummary(
+            deletedCount = 1,
+            reclaimedBytes = 500L,
+            failedFileNames = emptyList(),
+            deletedRecommendationIds = setOf(999L)
+        )
+
+        val finalSummary = useCase.verifyAndFinalizeAfterAuthorization(
+            pendingRecommendations = listOf(recDeleted, recRemaining),
+            directSummary = initialDirectSummary
+        )
+
+        // 1 direct + 1 auth-deleted = 2 deleted
+        assertEquals(2, finalSummary.deletedCount)
+        assertEquals(1700L, finalSummary.reclaimedBytes) // 500 + 1200
+        assertEquals(1, finalSummary.failedFileNames.size)
+        assertEquals("auth_remaining.tmp", finalSummary.failedFileNames.first())
+        assertEquals(setOf(999L, 501L), finalSummary.deletedRecommendationIds)
+        assertFalse(finalSummary.deletedRecommendationIds.contains(502L))
+    }
+
+    @Test
+    fun execute_batchesRecommendations_toMaxBatchLimit() = runTest(testDispatcher) {
+        // Create 2005 recommendations with content:// URIs
+        val manyRecs = (1..2005).map { index ->
+            createRecommendation(
+                id = index.toLong(),
+                file = StorageFile(
+                    id = index.toLong(),
+                    name = "file_$index.jpg",
+                    uri = "content://media/external/images/media/$index",
+                    sizeBytes = 100L,
+                    mimeType = "image/jpeg",
+                    extension = "jpg",
+                    dateModifiedEpochSeconds = 123456L,
+                    category = StorageCategory.IMAGES
+                ),
+                reclaimableBytes = 100L
+            )
+        }
+
+        // When content URIs do not exist or are processed
+        val result = useCase.execute(manyRecs)
+        when (result) {
+            is DeletionResult.RequiresAuthorization -> {
+                // Must respect max batch limit of 2000
+                assertTrue(result.pendingRecommendations.size <= DeleteSelectedFilesUseCase.MAX_BATCH_SIZE)
+                assertEquals(DeleteSelectedFilesUseCase.MAX_BATCH_SIZE, result.pendingRecommendations.size)
+            }
+            is DeletionResult.Completed -> {
+                // All 2005 non-existent files reported as failed
+                assertEquals(2005, result.summary.failedFileNames.size)
+                assertEquals(0, result.summary.deletedCount)
+            }
+        }
+    }
 }

@@ -1,5 +1,8 @@
 package com.aistudio.cleanmind.app.presentation.screens.cleanup
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -46,6 +49,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import com.aistudio.cleanmind.app.R
 import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
 import com.aistudio.cleanmind.app.presentation.components.CleanMindTopAppBar
+import com.aistudio.cleanmind.app.presentation.components.ReviewConfirmationDialog
 import com.aistudio.cleanmind.app.presentation.home.HomeUiState
 import com.aistudio.cleanmind.app.presentation.theme.ElegantDarkBackground
 import com.aistudio.cleanmind.app.presentation.theme.ElegantDarkPrimary
@@ -78,11 +83,38 @@ fun CleanupCenterScreen(
     onRemoveFromSelection: (Long) -> Unit,
     onExecuteCleanup: () -> Unit,
     onClearSuccessState: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onShowReviewConfirmation: () -> Unit = {},
+    onDismissReviewConfirmation: () -> Unit = {},
+    onAuthorizationResult: (Boolean) -> Unit = {}
 ) {
     val selectedItems = uiState.selectedRecommendations
     val isDeleting = uiState.isDeleting
     val deletionSummary = uiState.deletionSummary
+
+    val intentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        onAuthorizationResult(result.resultCode == android.app.Activity.RESULT_OK)
+    }
+
+    LaunchedEffect(uiState.pendingIntentSender) {
+        uiState.pendingIntentSender?.let { sender ->
+            intentSenderLauncher.launch(IntentSenderRequest.Builder(sender).build())
+        }
+    }
+
+    if (uiState.showReviewConfirmationDialog) {
+        ReviewConfirmationDialog(
+            selectedRecommendations = selectedItems,
+            totalReclaimableFormatted = uiState.selectedReclaimableSpaceFormatted,
+            onConfirm = {
+                onDismissReviewConfirmation()
+                onExecuteCleanup()
+            },
+            onDismiss = onDismissReviewConfirmation
+        )
+    }
 
     Scaffold(
         modifier = modifier
@@ -157,7 +189,7 @@ fun CleanupCenterScreen(
                                 reclaimableBytes = uiState.selectedReclaimableBytes,
                                 reclaimableSpaceFormatted = uiState.selectedReclaimableSpaceFormatted,
                                 onRemoveItem = onRemoveFromSelection,
-                                onConfirmCleanup = onExecuteCleanup
+                                onConfirmCleanup = onShowReviewConfirmation
                             )
                         }
                     }

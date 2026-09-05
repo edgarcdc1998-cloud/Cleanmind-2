@@ -14,11 +14,14 @@ import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
 import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.repository.SettingsRepository
+import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
 import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
 import com.aistudio.cleanmind.app.domain.usecase.ClearAnalysisHistoryUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetLatestAnalysisUseCase
 import com.aistudio.cleanmind.app.domain.usecase.DeleteSelectedFilesUseCase
+import com.aistudio.cleanmind.app.domain.usecase.DeletionResult
+import com.aistudio.cleanmind.app.domain.usecase.DeletionSummary
 import com.aistudio.cleanmind.app.util.StorageFormatter
 import com.aistudio.cleanmind.app.worker.WorkManagerScheduler
 import kotlinx.coroutines.CoroutineDispatcher
@@ -354,6 +357,12 @@ class HomeViewModel(
         _uiState.update { it.copy(selectedRecommendationIds = emptySet()) }
     }
 
+    private data class PendingAuthorizationData(
+        val pendingRecommendations: List<CleanupRecommendation>,
+        val directSummary: DeletionSummary
+    )
+    private var pendingAuthorization: PendingAuthorizationData? = null
+
     fun onShowReviewConfirmation() {
         _uiState.update { it.copy(showReviewConfirmationDialog = true) }
     }
@@ -370,25 +379,91 @@ class HomeViewModel(
         _uiState.update { it.copy(isDeleting = true) }
 
         viewModelScope.launch(ioDispatcher) {
-            useCase(recommendations).onSuccess { summary ->
-                _uiState.update { state ->
-                    state.copy(
-                        isDeleting = false,
-                        deletionSummary = DeletionSummaryUi(
-                            deletedCount = summary.deletedCount,
-                            reclaimedBytes = summary.reclaimedBytes,
-                            reclaimedSpaceFormatted = StorageFormatter.formatBytes(summary.reclaimedBytes),
-                            failedFileNames = summary.failedFileNames
-                        )
-                    )
+            when (val result = useCase.execute(recommendations)) {
+                is DeletionResult.Completed -> {
+                    handleDeletionCompleted(result.summary)
                 }
-                // Clear selection and refresh stats
-                onClearRecommendationSelection()
+                is DeletionResult.RequiresAuthorization -> {
+                    pendingAuthorization = PendingAuthorizationData(
+                        pendingRecommendations = result.pendingRecommendations,
+                        directSummary = result.directSummary
+                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            isDeleting = false,
+                            pendingIntentSender = result.intentSender
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun onAuthorizationResult(approved: Boolean) {
+        val pending = pendingAuthorization
+        pendingAuthorization = null
+        _uiState.update { it.copy(pendingIntentSender = null) }
+
+        if (pending == null) return
+
+        if (!approved) {
+            // User refused or canceled authorization in system dialog.
+            // Do NOT clear selection prematurely, do NOT report false success.
+            _uiState.update { state ->
+                val failedNames = pending.directSummary.failedFileNames + pending.pendingRecommendations.map { it.file.name }
+                val deletedCount = pending.directSummary.deletedCount
+                val reclaimedBytes = pending.directSummary.reclaimedBytes
+                val remainingSelection = state.selectedRecommendationIds - pending.directSummary.deletedRecommendationIds
+
+                state.copy(
+                    isDeleting = false,
+                    selectedRecommendationIds = remainingSelection,
+                    deletionSummary = DeletionSummaryUi(
+                        deletedCount = deletedCount,
+                        reclaimedBytes = reclaimedBytes,
+                        reclaimedSpaceFormatted = StorageFormatter.formatBytes(reclaimedBytes),
+                        failedFileNames = failedNames
+                    )
+                )
+            }
+            if (pending.directSummary.deletedCount > 0) {
                 loadDeviceStorageStats()
                 startStorageAnalysis()
-            }.onFailure {
-                _uiState.update { it.copy(isDeleting = false) }
             }
+            return
+        }
+
+        // User approved in the system dialog
+        val useCase = deleteSelectedFilesUseCase ?: return
+        _uiState.update { it.copy(isDeleting = true) }
+
+        viewModelScope.launch(ioDispatcher) {
+            val finalSummary = useCase.verifyAndFinalizeAfterAuthorization(
+                pendingRecommendations = pending.pendingRecommendations,
+                directSummary = pending.directSummary
+            )
+            handleDeletionCompleted(finalSummary)
+        }
+    }
+
+    private fun handleDeletionCompleted(summary: DeletionSummary) {
+        _uiState.update { state ->
+            val remainingSelection = state.selectedRecommendationIds - summary.deletedRecommendationIds
+            state.copy(
+                isDeleting = false,
+                selectedRecommendationIds = remainingSelection,
+                deletionSummary = DeletionSummaryUi(
+                    deletedCount = summary.deletedCount,
+                    reclaimedBytes = summary.reclaimedBytes,
+                    reclaimedSpaceFormatted = StorageFormatter.formatBytes(summary.reclaimedBytes),
+                    failedFileNames = summary.failedFileNames
+                )
+            )
+        }
+
+        if (summary.deletedCount > 0) {
+            loadDeviceStorageStats()
+            startStorageAnalysis()
         }
     }
 

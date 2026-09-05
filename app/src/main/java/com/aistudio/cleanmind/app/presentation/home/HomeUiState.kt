@@ -47,7 +47,8 @@ data class HomeUiState(
     val selectedRecommendationIds: Set<Long> = emptySet(),
     val showReviewConfirmationDialog: Boolean = false,
     val isDeleting: Boolean = false,
-    val deletionSummary: DeletionSummaryUi? = null
+    val deletionSummary: DeletionSummaryUi? = null,
+    val pendingIntentSender: android.content.IntentSender? = null
 ) {
     val isAnalyzed: Boolean
         get() = status is AnalysisStatus.Success || status is AnalysisStatus.Saved || hasSavedAnalysis
