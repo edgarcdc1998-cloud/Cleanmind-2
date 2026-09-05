@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class DeleteSelectedFilesUseCase(
+open class DeleteSelectedFilesUseCase(
     private val context: Context,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -152,16 +152,12 @@ class DeleteSelectedFilesUseCase(
         return when (val result = execute(recommendations)) {
             is DeletionResult.Completed -> Result.success(result.summary)
             is DeletionResult.RequiresAuthorization -> {
-                val failedPending = result.pendingRecommendations.map { it.file.name }
-                val summary = result.directSummary.copy(
-                    failedFileNames = result.directSummary.failedFileNames + failedPending
-                )
-                Result.success(summary)
+                Result.failure(PendingAuthorizationException(result))
             }
         }
     }
 
-    private fun doesContentUriExist(uri: Uri): Boolean {
+    internal open fun doesContentUriExist(uri: Uri): Boolean {
         return try {
             context.contentResolver.query(
                 uri,
@@ -177,7 +173,7 @@ class DeleteSelectedFilesUseCase(
         }
     }
 
-    private fun createIntentSenderForAuthorization(recommendations: List<CleanupRecommendation>): IntentSender? {
+    internal open fun createIntentSenderForAuthorization(recommendations: List<CleanupRecommendation>): IntentSender? {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val uris = recommendations.take(MAX_BATCH_SIZE).map { Uri.parse(it.file.uri) }
@@ -200,6 +196,10 @@ class DeleteSelectedFilesUseCase(
         }
     }
 }
+
+class PendingAuthorizationException(
+    val requiresAuthorization: DeletionResult.RequiresAuthorization
+) : IllegalStateException("Deletion requires user authorization via system dialog and cannot be completed directly")
 
 sealed class DeletionResult {
     data class Completed(val summary: DeletionSummary) : DeletionResult()

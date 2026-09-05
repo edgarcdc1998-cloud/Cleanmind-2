@@ -1,6 +1,9 @@
 package com.aistudio.cleanmind.app.domain.usecase
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
 import com.aistudio.cleanmind.app.domain.model.RecommendationPriority
@@ -326,5 +329,92 @@ class DeleteSelectedFilesUseCaseTest {
                 assertEquals(0, result.summary.deletedCount)
             }
         }
+    }
+
+    @Test
+    fun execute_contentUriRequiringAuth_returnsRequiresAuthorizationAndDoesNotReportFalseSuccess() = runTest(testDispatcher) {
+        val fakeIntent = Intent("action.cleanmind.test")
+        val fakePendingIntent = PendingIntent.getBroadcast(
+            context, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val expectedIntentSender = fakePendingIntent.intentSender
+
+        val contentUri = "content://media/external/images/media/12345"
+        val rec = createRecommendation(
+            id = 601L,
+            file = StorageFile(
+                id = 99L,
+                name = "protected_photo.jpg",
+                uri = contentUri,
+                sizeBytes = 2048L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 2048L
+        )
+
+        val testUseCase = object : DeleteSelectedFilesUseCase(context, testDispatcher) {
+            override fun doesContentUriExist(uri: Uri): Boolean = true
+            override fun createIntentSenderForAuthorization(recommendations: List<CleanupRecommendation>) = expectedIntentSender
+        }
+
+        val result = testUseCase.execute(listOf(rec))
+
+        assertTrue("Resultado deve ser RequiresAuthorization", result is DeletionResult.RequiresAuthorization)
+        assertFalse("Resultado NÃO deve ser Completed", result is DeletionResult.Completed)
+
+        val authResult = result as DeletionResult.RequiresAuthorization
+        assertEquals(expectedIntentSender, authResult.intentSender)
+        assertEquals(1, authResult.pendingRecommendations.size)
+        assertEquals(rec.id, authResult.pendingRecommendations.first().id)
+        assertEquals("Recomendação deve permanecer pendente de autorização", "protected_photo.jpg", authResult.pendingRecommendations.first().file.name)
+        assertEquals(0, authResult.directSummary.deletedCount)
+        assertEquals(0L, authResult.directSummary.reclaimedBytes)
+        assertFalse("Arquivo aguardando autorização NÃO deve ser marcado como falha final no directSummary", authResult.directSummary.failedFileNames.contains("protected_photo.jpg"))
+    }
+
+    @Test
+    fun invoke_whenAuthorizationRequired_doesNotTransformIntoResultSuccess() = runTest(testDispatcher) {
+        val fakeIntent = Intent("action.cleanmind.test")
+        val fakePendingIntent = PendingIntent.getBroadcast(
+            context, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val expectedIntentSender = fakePendingIntent.intentSender
+
+        val contentUri = "content://media/external/images/media/54321"
+        val rec = createRecommendation(
+            id = 602L,
+            file = StorageFile(
+                id = 98L,
+                name = "pending_photo.jpg",
+                uri = contentUri,
+                sizeBytes = 4096L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 4096L
+        )
+
+        val testUseCase = object : DeleteSelectedFilesUseCase(context, testDispatcher) {
+            override fun doesContentUriExist(uri: Uri): Boolean = true
+            override fun createIntentSenderForAuthorization(recommendations: List<CleanupRecommendation>) = expectedIntentSender
+        }
+
+        val result = testUseCase(listOf(rec))
+
+        assertFalse("operator invoke() NUNCA deve transformar RequiresAuthorization em Result.success", result.isSuccess)
+        assertTrue("operator invoke() deve retornar Result.failure quando há autorização pendente", result.isFailure)
+
+        val exception = result.exceptionOrNull()
+        assertTrue("Exceção deve ser PendingAuthorizationException", exception is PendingAuthorizationException)
+        val pendingException = exception as PendingAuthorizationException
+        assertEquals(expectedIntentSender, pendingException.requiresAuthorization.intentSender)
+        assertEquals(1, pendingException.requiresAuthorization.pendingRecommendations.size)
+        assertEquals(rec.id, pendingException.requiresAuthorization.pendingRecommendations.first().id)
+        assertFalse("Arquivo pendente NÃO deve ser tratado como falha final no directSummary", pendingException.requiresAuthorization.directSummary.failedFileNames.contains("pending_photo.jpg"))
     }
 }
