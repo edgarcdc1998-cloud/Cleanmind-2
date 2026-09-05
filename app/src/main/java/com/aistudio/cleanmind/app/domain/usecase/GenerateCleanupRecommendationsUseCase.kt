@@ -28,7 +28,7 @@ class GenerateCleanupRecommendationsUseCase(
         val temporaryFiles = findTemporaryFilesUseCase(files)
 
         val recommendations = mutableListOf<CleanupRecommendation>()
-        val processedFileIds = mutableSetOf<Long>()
+        val processedFileUris = mutableSetOf<String>()
 
         // 1. Processar Duplicados
         // Cada grupo mantém o primeiro arquivo (mais antigo) como original. Os demais viram recomendações.
@@ -58,7 +58,7 @@ class GenerateCleanupRecommendationsUseCase(
 
                 recommendations.add(
                     CleanupRecommendation(
-                        id = 0L,
+                        id = generateRecommendationId(RecommendationType.DUPLICATE, file.uri),
                         file = file,
                         type = RecommendationType.DUPLICATE,
                         priority = priority,
@@ -68,13 +68,13 @@ class GenerateCleanupRecommendationsUseCase(
                         duplicateGroupId = group.groupId
                     )
                 )
-                processedFileIds.add(file.id)
+                processedFileUris.add(file.uri)
             }
         }
 
         // 2. Processar Arquivos Grandes
         for (file in largeFiles) {
-            if (file.id !in processedFileIds) {
+            if (file.uri !in processedFileUris) {
                 val score = when {
                     file.sizeBytes >= 500L * 1024L * 1024L -> 85
                     file.sizeBytes >= 200L * 1024L * 1024L -> 75
@@ -91,7 +91,7 @@ class GenerateCleanupRecommendationsUseCase(
 
                 recommendations.add(
                     CleanupRecommendation(
-                        id = 0L,
+                        id = generateRecommendationId(RecommendationType.LARGE_FILE, file.uri),
                         file = file,
                         type = RecommendationType.LARGE_FILE,
                         priority = priority,
@@ -100,19 +100,19 @@ class GenerateCleanupRecommendationsUseCase(
                         reclaimableSizeBytes = file.sizeBytes
                     )
                 )
-                processedFileIds.add(file.id)
+                processedFileUris.add(file.uri)
             }
         }
 
         // 3. Processar Arquivos Temporários
         for (file in temporaryFiles) {
-            if (file.id !in processedFileIds) {
+            if (file.uri !in processedFileUris) {
                 val score = if (file.sizeBytes > 5L * 1024L * 1024L) 80 else 70
                 val reason = "Arquivo temporário ou residual (.${file.extension}) que costuma ser descartável com segurança (${StorageFormatter.formatBytes(file.sizeBytes)})."
 
                 recommendations.add(
                     CleanupRecommendation(
-                        id = 0L,
+                        id = generateRecommendationId(RecommendationType.TEMPORARY_FILE, file.uri),
                         file = file,
                         type = RecommendationType.TEMPORARY_FILE,
                         priority = RecommendationPriority.MEDIUM,
@@ -121,13 +121,13 @@ class GenerateCleanupRecommendationsUseCase(
                         reclaimableSizeBytes = file.sizeBytes
                     )
                 )
-                processedFileIds.add(file.id)
+                processedFileUris.add(file.uri)
             }
         }
 
         // 4. Processar Arquivos Antigos
         for (file in oldFiles) {
-            if (file.id !in processedFileIds) {
+            if (file.uri !in processedFileUris) {
                 val ageSeconds = (currentEpochSeconds - file.dateModifiedEpochSeconds).coerceAtLeast(0L)
                 val months = (ageSeconds / (30L * 86400L)).coerceAtLeast(6L)
                 val score = if (file.sizeBytes >= 20L * 1024L * 1024L) 60 else 45
@@ -141,7 +141,7 @@ class GenerateCleanupRecommendationsUseCase(
 
                 recommendations.add(
                     CleanupRecommendation(
-                        id = 0L,
+                        id = generateRecommendationId(RecommendationType.OLD_FILE, file.uri),
                         file = file,
                         type = RecommendationType.OLD_FILE,
                         priority = priority,
@@ -150,7 +150,7 @@ class GenerateCleanupRecommendationsUseCase(
                         reclaimableSizeBytes = file.sizeBytes
                     )
                 )
-                processedFileIds.add(file.id)
+                processedFileUris.add(file.uri)
             }
         }
 
@@ -177,5 +177,16 @@ class GenerateCleanupRecommendationsUseCase(
             recommendations = sortedRecommendations,
             duplicateGroups = duplicateGroups
         )
+    }
+
+    private fun generateRecommendationId(type: RecommendationType, uri: String): Long {
+        val key = "${type.name}:$uri"
+        var hash = -3750763034362895579L // 0xcbf29ce484222325L (FNV offset basis)
+        for (char in key) {
+            hash = hash xor char.code.toLong()
+            hash *= 1099511628211L // FNV prime
+        }
+        val id = hash and Long.MAX_VALUE
+        return if (id == 0L) 1L else id
     }
 }

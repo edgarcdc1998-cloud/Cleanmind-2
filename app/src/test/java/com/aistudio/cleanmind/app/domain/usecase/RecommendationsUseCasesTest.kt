@@ -176,4 +176,150 @@ class RecommendationsUseCasesTest {
         val oldRec = summary.recommendations.first { it.type == RecommendationType.OLD_FILE }
         assertTrue(oldRec.reason.contains("sem modificação"))
     }
+
+    @Test
+    fun generateCleanupRecommendations_recommendationIdIsNeverZero() = runTest {
+        val now = 1700000000L
+        val file1 = createFile(id = 1L, name = "d1.jpg", uri = "content://media/images/1", sizeBytes = 1000L, dateModifiedEpochSeconds = now)
+        val file2 = createFile(id = 2L, name = "d2.jpg", uri = "content://media/images/2", sizeBytes = 1000L, dateModifiedEpochSeconds = now)
+        val largeFile = createFile(id = 3L, name = "big.mp4", uri = "content://media/video/3", sizeBytes = 100L * 1024L * 1024L, dateModifiedEpochSeconds = now)
+        val tempFile = createFile(id = 4L, name = "temp.tmp", uri = "content://media/files/4", sizeBytes = 500L, extension = "tmp", dateModifiedEpochSeconds = now)
+        val oldFile = createFile(id = 5L, name = "old.pdf", uri = "content://media/docs/5", sizeBytes = 2000L, dateModifiedEpochSeconds = now - (300L * 86400L))
+
+        val hashRepo = FakeFileHashRepository(mapOf("content://media/images/1" to "hash", "content://media/images/2" to "hash"))
+        val useCase = GenerateCleanupRecommendationsUseCase(
+            findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
+            findDuplicateFilesUseCase = FindDuplicateFilesUseCase(hashRepo),
+            findOldFilesUseCase = FindOldFilesUseCase(defaultThresholdDays = 180, defaultMinSizeBytes = 1000L),
+            findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
+        )
+
+        val summary = useCase(listOf(file1, file2, largeFile, tempFile, oldFile), currentEpochSeconds = now)
+
+        assertTrue(summary.recommendations.isNotEmpty())
+        for (rec in summary.recommendations) {
+            assertTrue("Recommendation ID must never be 0L for type ${rec.type}", rec.id != 0L)
+        }
+    }
+
+    @Test
+    fun generateCleanupRecommendations_differentRecommendationsProduceDifferentIds() = runTest {
+        val now = 1700000000L
+        val file1 = createFile(id = 1L, name = "d1.jpg", uri = "content://media/images/1", sizeBytes = 1000L, dateModifiedEpochSeconds = now)
+        val file2 = createFile(id = 2L, name = "d2.jpg", uri = "content://media/images/2", sizeBytes = 1000L, dateModifiedEpochSeconds = now)
+        val largeFile = createFile(id = 3L, name = "big.mp4", uri = "content://media/video/3", sizeBytes = 100L * 1024L * 1024L, dateModifiedEpochSeconds = now)
+        val tempFile = createFile(id = 4L, name = "temp.tmp", uri = "content://media/files/4", sizeBytes = 500L, extension = "tmp", dateModifiedEpochSeconds = now)
+
+        val hashRepo = FakeFileHashRepository(mapOf("content://media/images/1" to "hash", "content://media/images/2" to "hash"))
+        val useCase = GenerateCleanupRecommendationsUseCase(
+            findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
+            findDuplicateFilesUseCase = FindDuplicateFilesUseCase(hashRepo),
+            findOldFilesUseCase = FindOldFilesUseCase(),
+            findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
+        )
+
+        val summary = useCase(listOf(file1, file2, largeFile, tempFile), currentEpochSeconds = now)
+        val ids = summary.recommendations.map { it.id }
+
+        assertEquals("All recommendation IDs must be unique", ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun generateCleanupRecommendations_sameInputProducesDeterministicId() = runTest {
+        val now = 1700000000L
+        val file1 = createFile(id = 1L, name = "d1.jpg", uri = "content://media/images/1", sizeBytes = 1000L, dateModifiedEpochSeconds = now)
+        val file2 = createFile(id = 2L, name = "d2.jpg", uri = "content://media/images/2", sizeBytes = 1000L, dateModifiedEpochSeconds = now)
+        val largeFile = createFile(id = 3L, name = "big.mp4", uri = "content://media/video/3", sizeBytes = 100L * 1024L * 1024L, dateModifiedEpochSeconds = now)
+
+        val hashRepo = FakeFileHashRepository(mapOf("content://media/images/1" to "hash", "content://media/images/2" to "hash"))
+        val useCase1 = GenerateCleanupRecommendationsUseCase(
+            findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
+            findDuplicateFilesUseCase = FindDuplicateFilesUseCase(hashRepo),
+            findOldFilesUseCase = FindOldFilesUseCase(),
+            findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
+        )
+        val useCase2 = GenerateCleanupRecommendationsUseCase(
+            findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
+            findDuplicateFilesUseCase = FindDuplicateFilesUseCase(hashRepo),
+            findOldFilesUseCase = FindOldFilesUseCase(),
+            findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
+        )
+
+        val summary1 = useCase1(listOf(file1, file2, largeFile), currentEpochSeconds = now)
+        val summary2 = useCase2(listOf(file1, file2, largeFile), currentEpochSeconds = now)
+
+        assertEquals(summary1.recommendations.size, summary2.recommendations.size)
+        for (i in summary1.recommendations.indices) {
+            assertEquals(
+                "Recommendation ID must be deterministic across runs",
+                summary1.recommendations[i].id,
+                summary2.recommendations[i].id
+            )
+        }
+    }
+
+    @Test
+    fun generateCleanupRecommendations_filesWithSameNumericIdButDifferentUrisAreNotDeduplicated() = runTest {
+        val now = 1700000000L
+        // Two files in different collections with the identical numeric ID 999L
+        val imageFile = createFile(
+            id = 999L,
+            name = "photo.jpg",
+            uri = "content://media/images/999",
+            sizeBytes = 60L * 1024L * 1024L,
+            category = StorageCategory.IMAGES,
+            dateModifiedEpochSeconds = now
+        )
+        val videoFile = createFile(
+            id = 999L,
+            name = "clip.mp4",
+            uri = "content://media/video/999",
+            sizeBytes = 80L * 1024L * 1024L,
+            category = StorageCategory.VIDEOS,
+            dateModifiedEpochSeconds = now
+        )
+
+        val useCase = GenerateCleanupRecommendationsUseCase(
+            findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
+            findDuplicateFilesUseCase = FindDuplicateFilesUseCase(FakeFileHashRepository()),
+            findOldFilesUseCase = FindOldFilesUseCase(),
+            findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
+        )
+
+        val summary = useCase(listOf(imageFile, videoFile), currentEpochSeconds = now)
+
+        // Both files must be recommended as LARGE_FILE; neither should be discarded by a collision on numeric ID
+        assertEquals(2, summary.totalRecommendationsCount)
+        assertEquals(2, summary.largeFilesCount)
+        val uris = summary.recommendations.map { it.file.uri }
+        assertTrue(uris.contains("content://media/images/999"))
+        assertTrue(uris.contains("content://media/video/999"))
+    }
+
+    @Test
+    fun generateCleanupRecommendations_sameResourceWithMatchingUriIsNotRecommendedRedundantlyAcrossCategories() = runTest {
+        val now = 1700000000L
+        // File that qualifies for BOTH Large File (>50MB) and Old File (>180 days)
+        val resourceFile = createFile(
+            id = 123L,
+            name = "huge_archive.zip",
+            uri = "content://media/external/files/123",
+            sizeBytes = 120L * 1024L * 1024L,
+            dateModifiedEpochSeconds = now - (250L * 86400L) // > 180 days
+        )
+
+        val useCase = GenerateCleanupRecommendationsUseCase(
+            findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
+            findDuplicateFilesUseCase = FindDuplicateFilesUseCase(FakeFileHashRepository()),
+            findOldFilesUseCase = FindOldFilesUseCase(defaultThresholdDays = 180, defaultMinSizeBytes = 1000L),
+            findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
+        )
+
+        val summary = useCase(listOf(resourceFile), currentEpochSeconds = now)
+
+        // Must only be recommended once (under LARGE_FILE due to category precedence), not redundantly under OLD_FILE
+        assertEquals(1, summary.totalRecommendationsCount)
+        assertEquals(RecommendationType.LARGE_FILE, summary.recommendations.first().type)
+        assertEquals("content://media/external/files/123", summary.recommendations.first().file.uri)
+    }
 }
