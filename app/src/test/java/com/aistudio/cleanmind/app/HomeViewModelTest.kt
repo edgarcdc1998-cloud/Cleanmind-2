@@ -1,9 +1,14 @@
 package com.aistudio.cleanmind.app
 
 import android.app.Application
+import android.app.PendingIntent
+import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.aistudio.cleanmind.app.domain.model.CategorySummary
+import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
 import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
+import com.aistudio.cleanmind.app.domain.model.RecommendationPriority
+import com.aistudio.cleanmind.app.domain.model.RecommendationType
 import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.model.StorageFile
@@ -13,6 +18,8 @@ import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetLatestAnalysisUseCase
 import com.aistudio.cleanmind.app.domain.usecase.DeleteSelectedFilesUseCase
+import com.aistudio.cleanmind.app.domain.usecase.DeletionResult
+import com.aistudio.cleanmind.app.domain.usecase.DeletionSummary
 import com.aistudio.cleanmind.app.presentation.home.AnalysisStatus
 import com.aistudio.cleanmind.app.presentation.home.HomeViewModel
 import kotlinx.coroutines.Dispatchers
@@ -393,5 +400,260 @@ class HomeViewModelTest {
 
         assertNull(viewModel.uiState.value.pendingIntentSender)
         assertFalse(viewModel.uiState.value.isDeleting)
+    }
+
+    @Test
+    fun executeSelectedCleanup_whenRequiresAuthorization_setsPendingSenderAndPreservesSelection() = runTest(testDispatcher) {
+        val fakeIntent = Intent("action.cleanmind.test")
+        val fakePendingIntent = PendingIntent.getBroadcast(
+            application, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val expectedIntentSender = fakePendingIntent.intentSender
+
+        val rec = CleanupRecommendation(
+            id = 701L,
+            file = StorageFile(
+                id = 901L,
+                name = "photo_to_auth.jpg",
+                uri = "content://media/external/images/media/901",
+                sizeBytes = 2048L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            type = RecommendationType.TEMPORARY_FILE,
+            priority = RecommendationPriority.HIGH,
+            score = 90,
+            reason = "Test",
+            reclaimableSizeBytes = 2048L
+        )
+
+        val mockUseCase = object : DeleteSelectedFilesUseCase(application, testDispatcher) {
+            override suspend fun execute(recommendations: List<CleanupRecommendation>): DeletionResult {
+                return DeletionResult.RequiresAuthorization(
+                    intentSender = expectedIntentSender,
+                    pendingRecommendations = recommendations,
+                    directSummary = DeletionSummary(0, 0L, emptyList(), emptySet())
+                )
+            }
+        }
+
+        val fakeRepo = FakeRepository(
+            analysisResult = Result.success(
+                StorageAnalysisResult(
+                    totalFilesCount = 1,
+                    totalAnalyzedSizeBytes = 2048L,
+                    categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 2048L)),
+                    files = listOf(rec.file),
+                    deviceStorageStats = DeviceStorageStats(100L, 50L, 50L)
+                )
+            )
+        )
+
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher,
+            deleteSelectedFilesUseCase = mockUseCase
+        )
+        advanceUntilIdle()
+
+        // Populate recommendations via permission granted
+        viewModel.onPermissionGranted()
+        advanceUntilIdle()
+
+        // Select the item
+        viewModel.onToggleRecommendationSelection(rec.id)
+        assertTrue(viewModel.uiState.value.selectedRecommendationIds.contains(rec.id))
+
+        // Execute cleanup
+        viewModel.executeSelectedCleanup()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isDeleting)
+        assertNotNull(state.pendingIntentSender)
+        assertEquals(expectedIntentSender, state.pendingIntentSender)
+        // Selection must NOT be cleared prematurely
+        assertTrue(state.selectedRecommendationIds.contains(rec.id))
+        assertNull(state.deletionSummary)
+    }
+
+    @Test
+    fun onAuthorizationResult_whenApproved_finalizesAndCleansState() = runTest(testDispatcher) {
+        val fakeIntent = Intent("action.cleanmind.test")
+        val fakePendingIntent = PendingIntent.getBroadcast(
+            application, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val expectedIntentSender = fakePendingIntent.intentSender
+
+        val rec = CleanupRecommendation(
+            id = 702L,
+            file = StorageFile(
+                id = 902L,
+                name = "photo_approved.jpg",
+                uri = "content://media/external/images/media/902",
+                sizeBytes = 4096L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            type = RecommendationType.TEMPORARY_FILE,
+            priority = RecommendationPriority.HIGH,
+            score = 90,
+            reason = "Test",
+            reclaimableSizeBytes = 4096L
+        )
+
+        val mockUseCase = object : DeleteSelectedFilesUseCase(application, testDispatcher) {
+            override suspend fun execute(recommendations: List<CleanupRecommendation>): DeletionResult {
+                return DeletionResult.RequiresAuthorization(
+                    intentSender = expectedIntentSender,
+                    pendingRecommendations = recommendations,
+                    directSummary = DeletionSummary(0, 0L, emptyList(), emptySet())
+                )
+            }
+
+            override suspend fun verifyAndFinalizeAfterAuthorization(
+                pendingRecommendations: List<CleanupRecommendation>,
+                directSummary: DeletionSummary
+            ): DeletionSummary {
+                return DeletionSummary(
+                    deletedCount = 1,
+                    reclaimedBytes = 4096L,
+                    failedFileNames = emptyList(),
+                    deletedRecommendationIds = setOf(702L)
+                )
+            }
+        }
+
+        val fakeRepo = FakeRepository(
+            analysisResult = Result.success(
+                StorageAnalysisResult(
+                    totalFilesCount = 1,
+                    totalAnalyzedSizeBytes = 4096L,
+                    categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 4096L)),
+                    files = listOf(rec.file),
+                    deviceStorageStats = DeviceStorageStats(100L, 50L, 50L)
+                )
+            )
+        )
+
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher,
+            deleteSelectedFilesUseCase = mockUseCase
+        )
+        advanceUntilIdle()
+
+        viewModel.onPermissionGranted()
+        advanceUntilIdle()
+
+        viewModel.onToggleRecommendationSelection(rec.id)
+        viewModel.executeSelectedCleanup()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.uiState.value.pendingIntentSender)
+
+        // User approves dialog
+        viewModel.onAuthorizationResult(approved = true)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isDeleting)
+        assertNull(state.pendingIntentSender)
+        // Selection of deleted item should be removed
+        assertFalse(state.selectedRecommendationIds.contains(rec.id))
+        assertNotNull(state.deletionSummary)
+        assertEquals(1, state.deletionSummary?.deletedCount)
+        assertEquals(4096L, state.deletionSummary?.reclaimedBytes)
+        assertTrue(state.deletionSummary?.failedFileNames?.isEmpty() == true)
+    }
+
+    @Test
+    fun onAuthorizationResult_whenRefusedAfterPending_preservesSelectionAndReportsAccurateState() = runTest(testDispatcher) {
+        val fakeIntent = Intent("action.cleanmind.test")
+        val fakePendingIntent = PendingIntent.getBroadcast(
+            application, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val expectedIntentSender = fakePendingIntent.intentSender
+
+        val rec = CleanupRecommendation(
+            id = 703L,
+            file = StorageFile(
+                id = 903L,
+                name = "photo_refused.jpg",
+                uri = "content://media/external/images/media/903",
+                sizeBytes = 1024L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            type = RecommendationType.TEMPORARY_FILE,
+            priority = RecommendationPriority.HIGH,
+            score = 90,
+            reason = "Test",
+            reclaimableSizeBytes = 1024L
+        )
+
+        val mockUseCase = object : DeleteSelectedFilesUseCase(application, testDispatcher) {
+            override suspend fun execute(recommendations: List<CleanupRecommendation>): DeletionResult {
+                return DeletionResult.RequiresAuthorization(
+                    intentSender = expectedIntentSender,
+                    pendingRecommendations = recommendations,
+                    directSummary = DeletionSummary(0, 0L, emptyList(), emptySet())
+                )
+            }
+        }
+
+        val fakeRepo = FakeRepository(
+            analysisResult = Result.success(
+                StorageAnalysisResult(
+                    totalFilesCount = 1,
+                    totalAnalyzedSizeBytes = 1024L,
+                    categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 1024L)),
+                    files = listOf(rec.file),
+                    deviceStorageStats = DeviceStorageStats(100L, 50L, 50L)
+                )
+            )
+        )
+
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher,
+            deleteSelectedFilesUseCase = mockUseCase
+        )
+        advanceUntilIdle()
+
+        viewModel.onPermissionGranted()
+        advanceUntilIdle()
+
+        viewModel.onToggleRecommendationSelection(rec.id)
+        viewModel.executeSelectedCleanup()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.uiState.value.pendingIntentSender)
+
+        // User denies/cancels dialog
+        viewModel.onAuthorizationResult(approved = false)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isDeleting)
+        assertNull(state.pendingIntentSender)
+        // Selection must be preserved because file was not deleted
+        assertTrue(state.selectedRecommendationIds.contains(rec.id))
+        assertNotNull(state.deletionSummary)
+        assertEquals(0, state.deletionSummary?.deletedCount)
+        assertEquals(0L, state.deletionSummary?.reclaimedBytes)
+        assertEquals(listOf("photo_refused.jpg"), state.deletionSummary?.failedFileNames)
     }
 }

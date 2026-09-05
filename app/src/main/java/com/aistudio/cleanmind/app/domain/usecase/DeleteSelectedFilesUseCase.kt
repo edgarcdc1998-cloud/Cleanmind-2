@@ -20,7 +20,7 @@ open class DeleteSelectedFilesUseCase(
         const val MAX_BATCH_SIZE = 2000
     }
 
-    suspend fun execute(recommendations: List<CleanupRecommendation>): DeletionResult = withContext(ioDispatcher) {
+    open suspend fun execute(recommendations: List<CleanupRecommendation>): DeletionResult = withContext(ioDispatcher) {
         var directDeletedCount = 0
         var directReclaimedBytes = 0L
         val directFailedFiles = mutableListOf<String>()
@@ -113,7 +113,7 @@ open class DeleteSelectedFilesUseCase(
         DeletionResult.Completed(directSummary)
     }
 
-    suspend fun verifyAndFinalizeAfterAuthorization(
+    open suspend fun verifyAndFinalizeAfterAuthorization(
         pendingRecommendations: List<CleanupRecommendation>,
         directSummary: DeletionSummary
     ): DeletionSummary = withContext(ioDispatcher) {

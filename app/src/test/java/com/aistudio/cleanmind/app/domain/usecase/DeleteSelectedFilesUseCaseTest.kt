@@ -417,4 +417,67 @@ class DeleteSelectedFilesUseCaseTest {
         assertEquals(rec.id, pendingException.requiresAuthorization.pendingRecommendations.first().id)
         assertFalse("Arquivo pendente NÃO deve ser tratado como falha final no directSummary", pendingException.requiresAuthorization.directSummary.failedFileNames.contains("pending_photo.jpg"))
     }
+
+    @Test
+    fun execute_mixedDirectAndAuthorization_partitionsCorrectly() = runTest(testDispatcher) {
+        val fakeIntent = Intent("action.cleanmind.test")
+        val fakePendingIntent = PendingIntent.getBroadcast(
+            context, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val expectedIntentSender = fakePendingIntent.intentSender
+
+        val directFile = File(context.cacheDir, "direct_file.tmp")
+        directFile.writeText("direct delete")
+        assertTrue(directFile.exists())
+
+        val recDirect = createRecommendation(
+            id = 701L,
+            file = StorageFile(
+                id = 801L,
+                name = "direct_file.tmp",
+                uri = directFile.absolutePath,
+                sizeBytes = 500L,
+                mimeType = "application/octet-stream",
+                extension = "tmp",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.OTHERS
+            ),
+            reclaimableBytes = 500L
+        )
+
+        val recAuth = createRecommendation(
+            id = 702L,
+            file = StorageFile(
+                id = 802L,
+                name = "auth_file.jpg",
+                uri = "content://media/external/images/media/802",
+                sizeBytes = 1500L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 1500L
+        )
+
+        val testUseCase = object : DeleteSelectedFilesUseCase(context, testDispatcher) {
+            override fun doesContentUriExist(uri: Uri): Boolean = true
+            override fun createIntentSenderForAuthorization(recommendations: List<CleanupRecommendation>) = expectedIntentSender
+        }
+
+        val result = testUseCase.execute(listOf(recDirect, recAuth))
+        assertTrue(result is DeletionResult.RequiresAuthorization)
+
+        val authResult = result as DeletionResult.RequiresAuthorization
+        assertEquals(expectedIntentSender, authResult.intentSender)
+        assertEquals(1, authResult.pendingRecommendations.size)
+        assertEquals(702L, authResult.pendingRecommendations.first().id)
+
+        // Direct file must already be deleted
+        assertFalse(directFile.exists())
+        assertEquals(1, authResult.directSummary.deletedCount)
+        assertEquals(500L, authResult.directSummary.reclaimedBytes)
+        assertEquals(setOf(701L), authResult.directSummary.deletedRecommendationIds)
+        assertTrue(authResult.directSummary.failedFileNames.isEmpty())
+    }
 }
