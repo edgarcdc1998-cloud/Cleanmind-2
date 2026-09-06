@@ -14,7 +14,8 @@ import java.io.File
 
 open class DeleteSelectedFilesUseCase(
     private val context: Context,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val sdkVersion: Int = Build.VERSION.SDK_INT
 ) {
     companion object {
         const val MAX_BATCH_SIZE = 2000
@@ -94,23 +95,82 @@ open class DeleteSelectedFilesUseCase(
                 authRequiredRecs
             }
 
-            val intentSender = createIntentSenderForAuthorization(batchRecommendations)
-            if (intentSender != null) {
+            val authResult = requestAuthorization(batchRecommendations)
+            val updatedDirectDeletedCount = directSummary.deletedCount + authResult.directlyDeleted.size
+            val updatedDirectReclaimedBytes = directSummary.reclaimedBytes + authResult.directlyDeleted.sumOf { it.reclaimableSizeBytes }
+            val updatedDirectDeletedIds = directSummary.deletedRecommendationIds + authResult.directlyDeleted.map { it.id }
+            val updatedDirectSummary = directSummary.copy(
+                deletedCount = updatedDirectDeletedCount,
+                reclaimedBytes = updatedDirectReclaimedBytes,
+                deletedRecommendationIds = updatedDirectDeletedIds
+            )
+
+            if (authResult.intentSender != null) {
                 return@withContext DeletionResult.RequiresAuthorization(
-                    intentSender = intentSender,
-                    pendingRecommendations = batchRecommendations,
-                    directSummary = directSummary
+                    intentSender = authResult.intentSender,
+                    pendingRecommendations = authResult.pendingRecommendations,
+                    directSummary = updatedDirectSummary
                 )
             } else {
+                val actuallyFailed = authRequiredRecs.filterNot { authResult.directlyDeleted.contains(it) }
                 return@withContext DeletionResult.Completed(
-                    directSummary.copy(
-                        failedFileNames = directSummary.failedFileNames + authRequiredRecs.map { it.file.name }
+                    updatedDirectSummary.copy(
+                        failedFileNames = updatedDirectSummary.failedFileNames + actuallyFailed.map { it.file.name }
                     )
                 )
             }
         }
 
         DeletionResult.Completed(directSummary)
+    }
+
+    internal open fun requestAuthorization(
+        recommendations: List<CleanupRecommendation>
+    ): AuthorizationRequestResult {
+        if (sdkVersion >= Build.VERSION_CODES.R) {
+            val intentSender = createIntentSenderForAuthorization(recommendations)
+            return AuthorizationRequestResult(
+                intentSender = intentSender,
+                directlyDeleted = emptyList(),
+                pendingRecommendations = recommendations
+            )
+        } else if (sdkVersion >= Build.VERSION_CODES.Q) {
+            val directlyDeleted = mutableListOf<CleanupRecommendation>()
+            for ((index, rec) in recommendations.withIndex()) {
+                val uri = Uri.parse(rec.file.uri)
+                try {
+                    val deletedRows = context.contentResolver.delete(uri, null, null)
+                    if (deletedRows > 0 && !doesContentUriExist(uri)) {
+                        directlyDeleted.add(rec)
+                    }
+                } catch (e: RecoverableSecurityException) {
+                    val intentSender = e.userAction.actionIntent.intentSender
+                    val pending = listOf(rec) + recommendations.subList(index + 1, recommendations.size)
+                    return AuthorizationRequestResult(
+                        intentSender = intentSender,
+                        directlyDeleted = directlyDeleted,
+                        pendingRecommendations = pending
+                    )
+                } catch (_: Exception) {}
+            }
+            val fallbackSender = createIntentSenderForAuthorization(recommendations)
+            val remaining = if (fallbackSender != null) {
+                recommendations.filterNot { directlyDeleted.contains(it) }
+            } else {
+                emptyList()
+            }
+            return AuthorizationRequestResult(
+                intentSender = fallbackSender,
+                directlyDeleted = directlyDeleted,
+                pendingRecommendations = remaining
+            )
+        } else {
+            return AuthorizationRequestResult(
+                intentSender = null,
+                directlyDeleted = emptyList(),
+                pendingRecommendations = emptyList()
+            )
+        }
     }
 
     open suspend fun verifyAndFinalizeAfterAuthorization(
@@ -175,11 +235,11 @@ open class DeleteSelectedFilesUseCase(
 
     internal open fun createIntentSenderForAuthorization(recommendations: List<CleanupRecommendation>): IntentSender? {
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (sdkVersion >= Build.VERSION_CODES.R) {
                 val uris = recommendations.take(MAX_BATCH_SIZE).map { Uri.parse(it.file.uri) }
                 val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, uris)
                 pendingIntent.intentSender
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            } else if (sdkVersion >= Build.VERSION_CODES.Q) {
                 for (rec in recommendations) {
                     try {
                         context.contentResolver.delete(Uri.parse(rec.file.uri), null, null)
@@ -196,6 +256,12 @@ open class DeleteSelectedFilesUseCase(
         }
     }
 }
+
+data class AuthorizationRequestResult(
+    val intentSender: IntentSender?,
+    val directlyDeleted: List<CleanupRecommendation> = emptyList(),
+    val pendingRecommendations: List<CleanupRecommendation> = emptyList()
+)
 
 class PendingAuthorizationException(
     val requiresAuthorization: DeletionResult.RequiresAuthorization
