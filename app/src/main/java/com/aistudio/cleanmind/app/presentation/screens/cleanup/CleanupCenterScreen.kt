@@ -29,7 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Info
@@ -100,7 +100,11 @@ fun CleanupCenterScreen(
 
     LaunchedEffect(uiState.pendingIntentSender) {
         uiState.pendingIntentSender?.let { sender ->
-            intentSenderLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            try {
+                intentSenderLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            } catch (_: Exception) {
+                onAuthorizationResult(false)
+            }
         }
     }
 
@@ -131,7 +135,7 @@ fun CleanupCenterScreen(
                             modifier = Modifier.testTag("cleanup_center_back_btn")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.ArrowBack,
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Voltar",
                                 tint = ElegantDarkTextPrimary
                             )
