@@ -19,15 +19,17 @@ class FindOldFilesUseCase(
             .filter { file ->
                 file.sizeBytes >= minSizeBytes &&
                     file.dateModifiedEpochSeconds > 0L &&
-                    (currentEpochSeconds - file.dateModifiedEpochSeconds) >= thresholdSeconds
+                    (currentEpochSeconds - file.dateModifiedEpochSeconds) > thresholdSeconds
             }
             .sortedByDescending { it.sizeBytes }
             .toList()
     }
 
     companion object {
-        const val DEFAULT_THRESHOLD_DAYS = 180 // 6 meses
-        const val DEFAULT_MIN_SIZE_BYTES = 1024L * 1024L // 1 MB
+        const val OLD_FILE_DAYS = 30
+        const val OLD_FILE_THRESHOLD_SECONDS = OLD_FILE_DAYS * 24L * 60L * 60L
+        const val DEFAULT_THRESHOLD_DAYS = OLD_FILE_DAYS
+        const val DEFAULT_MIN_SIZE_BYTES = 0L
         private const val SECONDS_IN_DAY = 86400L
     }
 }

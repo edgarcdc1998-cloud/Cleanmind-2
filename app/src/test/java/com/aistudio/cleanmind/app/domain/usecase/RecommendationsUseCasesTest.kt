@@ -86,25 +86,72 @@ class RecommendationsUseCasesTest {
     @Test
     fun findOldFilesUseCase_identifiesFilesOlderThanCutoff() {
         val now = 1700000000L
-        val useCase = FindOldFilesUseCase(defaultThresholdDays = 180, defaultMinSizeBytes = 1000L)
+        val useCase = FindOldFilesUseCase(defaultThresholdDays = 30, defaultMinSizeBytes = 0L)
 
         val newFile = createFile(
             id = 1L,
             name = "recent.jpg",
             sizeBytes = 2000L,
-            dateModifiedEpochSeconds = now - (30L * 86400L) // 1 month ago
+            dateModifiedEpochSeconds = now - (15L * 86400L) // 15 days ago
         )
         val oldFile = createFile(
             id = 2L,
             name = "archived.pdf",
             sizeBytes = 2000L,
-            dateModifiedEpochSeconds = now - (200L * 86400L) // ~6.6 months ago
+            dateModifiedEpochSeconds = now - (45L * 86400L) // 45 days ago
         )
 
         val results = useCase(listOf(newFile, oldFile), currentEpochSeconds = now)
 
         assertEquals(1, results.size)
         assertEquals(2L, results.first().id)
+    }
+
+    @Test
+    fun findOldFilesUseCase_strictlyGreaterThan30DaysBoundary() {
+        val now = 1700000000L
+        val useCase = FindOldFilesUseCase()
+        val thirtyDaysSeconds = 30L * 86400L
+
+        val exact30DaysFile = createFile(
+            id = 1L,
+            name = "exact_30d.jpg",
+            sizeBytes = 1000L,
+            dateModifiedEpochSeconds = now - thirtyDaysSeconds
+        )
+        val thirtyDaysPlusOneSecFile = createFile(
+            id = 2L,
+            name = "30d_plus_1s.png",
+            sizeBytes = 1000L,
+            category = StorageCategory.IMAGES,
+            dateModifiedEpochSeconds = now - (thirtyDaysSeconds + 1L)
+        )
+        val twentyNineDaysFile = createFile(
+            id = 3L,
+            name = "29d.jpg",
+            sizeBytes = 1000L,
+            dateModifiedEpochSeconds = now - (29L * 86400L)
+        )
+
+        val results = useCase(listOf(exact30DaysFile, thirtyDaysPlusOneSecFile, twentyNineDaysFile), currentEpochSeconds = now)
+
+        assertEquals(1, results.size)
+        assertEquals(2L, results.first().id)
+    }
+
+    @Test
+    fun findOldFilesUseCase_ignoresZeroOrNegativeOrInvalidDateModified() {
+        val now = 1700000000L
+        val useCase = FindOldFilesUseCase()
+
+        val zeroDateFile = createFile(id = 1L, name = "zero.jpg", dateModifiedEpochSeconds = 0L)
+        val negativeDateFile = createFile(id = 2L, name = "negative.jpg", dateModifiedEpochSeconds = -100L)
+        val validOldFile = createFile(id = 3L, name = "old.jpg", dateModifiedEpochSeconds = now - (35L * 86400L))
+
+        val results = useCase(listOf(zeroDateFile, negativeDateFile, validOldFile), currentEpochSeconds = now)
+
+        assertEquals(1, results.size)
+        assertEquals(3L, results.first().id)
     }
 
     @Test
@@ -141,7 +188,7 @@ class RecommendationsUseCasesTest {
         val useCase = GenerateCleanupRecommendationsUseCase(
             findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
             findDuplicateFilesUseCase = FindDuplicateFilesUseCase(hashRepo),
-            findOldFilesUseCase = FindOldFilesUseCase(defaultThresholdDays = 180, defaultMinSizeBytes = 1000L),
+            findOldFilesUseCase = FindOldFilesUseCase(),
             findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
         )
 
@@ -190,7 +237,7 @@ class RecommendationsUseCasesTest {
         val useCase = GenerateCleanupRecommendationsUseCase(
             findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
             findDuplicateFilesUseCase = FindDuplicateFilesUseCase(hashRepo),
-            findOldFilesUseCase = FindOldFilesUseCase(defaultThresholdDays = 180, defaultMinSizeBytes = 1000L),
+            findOldFilesUseCase = FindOldFilesUseCase(),
             findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
         )
 
@@ -311,7 +358,7 @@ class RecommendationsUseCasesTest {
         val useCase = GenerateCleanupRecommendationsUseCase(
             findLargeFilesUseCase = FindLargeFilesUseCase(defaultThresholdBytes = 50L * 1024L * 1024L),
             findDuplicateFilesUseCase = FindDuplicateFilesUseCase(FakeFileHashRepository()),
-            findOldFilesUseCase = FindOldFilesUseCase(defaultThresholdDays = 180, defaultMinSizeBytes = 1000L),
+            findOldFilesUseCase = FindOldFilesUseCase(),
             findTemporaryFilesUseCase = FindTemporaryFilesUseCase()
         )
 

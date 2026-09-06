@@ -261,7 +261,7 @@ fun AnalysisScreen(
                                         icon = Icons.Default.History,
                                         iconTint = Color(0xFF81D4FA),
                                         text = stringResource(id = R.string.findings_old_format, summary.oldFilesCount),
-                                        subtext = "Não modificados há mais de 180 dias."
+                                        subtext = "Não modificados há mais de 30 dias."
                                     )
                                 }
 

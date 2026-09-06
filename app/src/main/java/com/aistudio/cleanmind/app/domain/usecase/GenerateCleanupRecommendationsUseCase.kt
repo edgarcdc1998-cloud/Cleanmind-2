@@ -128,8 +128,6 @@ class GenerateCleanupRecommendationsUseCase(
         // 4. Processar Arquivos Antigos
         for (file in oldFiles) {
             if (file.uri !in processedFileUris) {
-                val ageSeconds = (currentEpochSeconds - file.dateModifiedEpochSeconds).coerceAtLeast(0L)
-                val months = (ageSeconds / (30L * 86400L)).coerceAtLeast(6L)
                 val score = if (file.sizeBytes >= 20L * 1024L * 1024L) 60 else 45
                 val priority = if (file.sizeBytes >= 20L * 1024L * 1024L) {
                     RecommendationPriority.MEDIUM
@@ -137,7 +135,7 @@ class GenerateCleanupRecommendationsUseCase(
                     RecommendationPriority.LOW
                 }
 
-                val reason = "Arquivo da categoria ${file.category.displayName} sem modificação há mais de $months meses (${StorageFormatter.formatBytes(file.sizeBytes)})."
+                val reason = "Arquivo da categoria ${file.category.displayName} sem modificação há mais de 30 dias (${StorageFormatter.formatBytes(file.sizeBytes)})."
 
                 recommendations.add(
                     CleanupRecommendation(

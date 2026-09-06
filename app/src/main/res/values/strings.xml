@@ -42,11 +42,11 @@
     <string name="reclaimable_space_format">Até %1$s potencialmente recuperáveis</string>
     <string name="recommendations_count_format">%1$d itens merecem sua atenção</string>
     <string name="no_recommendations_title">Nenhum problema encontrado</string>
-    <string name="no_recommendations_desc">Seu dispositivo está bem organizado! Não encontramos arquivos duplicados, excessivamente grandes ou temporários que precisem de revisão.</string>
+    <string name="no_recommendations_desc">Seu dispositivo está bem organizado! Não encontramos arquivos duplicados, excessivamente grandes, antigos (>30 dias) ou temporários que precisem de revisão.</string>
     <string name="filter_all">Todos</string>
     <string name="filter_duplicates">Duplicados</string>
     <string name="filter_large_files">Arquivos Grandes</string>
-    <string name="filter_old_files">Antigos</string>
+    <string name="filter_old_files">Mais de 30 dias</string>
     <string name="filter_temp_files">Temporários</string>
     <string name="badge_priority_high">Prioridade Alta</string>
     <string name="badge_priority_medium">Prioridade Média</string>
