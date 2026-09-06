@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
+import com.aistudio.cleanmind.app.domain.model.AnalysisRecommendationsSummary
 import com.aistudio.cleanmind.app.domain.model.CategorySummary
 import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
 import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
@@ -410,18 +411,20 @@ class HomeViewModelTest {
         )
         val expectedIntentSender = fakePendingIntent.intentSender
 
+        val testFile = StorageFile(
+            id = 901L,
+            name = "photo_to_auth.jpg",
+            uri = "content://media/external/files/901",
+            sizeBytes = 2048L,
+            mimeType = "image/jpeg",
+            extension = "jpg",
+            dateModifiedEpochSeconds = 123456L,
+            category = StorageCategory.IMAGES
+        )
+
         val rec = CleanupRecommendation(
             id = 701L,
-            file = StorageFile(
-                id = 901L,
-                name = "photo_to_auth.jpg",
-                uri = "content://media/external/images/media/901",
-                sizeBytes = 2048L,
-                mimeType = "image/jpeg",
-                extension = "jpg",
-                dateModifiedEpochSeconds = 123456L,
-                category = StorageCategory.IMAGES
-            ),
+            file = testFile,
             type = RecommendationType.TEMPORARY_FILE,
             priority = RecommendationPriority.HIGH,
             score = 90,
@@ -439,14 +442,24 @@ class HomeViewModelTest {
             }
         }
 
-        val fakeRepo = FakeRepository(
-            analysisResult = Result.success(
-                StorageAnalysisResult(
-                    totalFilesCount = 1,
-                    totalAnalyzedSizeBytes = 2048L,
-                    categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 2048L)),
-                    files = listOf(rec.file),
-                    deviceStorageStats = DeviceStorageStats(100L, 50L, 50L)
+        val fakeRepo = FakeRepository()
+        val fakeHistoryRepo = FakeHistoryRepository(
+            initialAnalysis = StorageAnalysisResult(
+                totalFilesCount = 1,
+                totalAnalyzedSizeBytes = 2048L,
+                categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 2048L)),
+                files = listOf(testFile),
+                deviceStorageStats = DeviceStorageStats(100L, 50L, 50L),
+                recommendationsSummary = AnalysisRecommendationsSummary(
+                    totalRecommendationsCount = 1,
+                    potentialReclaimableBytes = 2048L,
+                    largeFilesCount = 0,
+                    duplicateFilesCount = 0,
+                    duplicateGroupsCount = 0,
+                    oldFilesCount = 0,
+                    temporaryFilesCount = 1,
+                    recommendations = listOf(rec),
+                    duplicateGroups = emptyList()
                 )
             )
         )
@@ -454,14 +467,11 @@ class HomeViewModelTest {
         val viewModel = HomeViewModel(
             application = application,
             getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
-            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo, fakeHistoryRepo),
             ioDispatcher = testDispatcher,
+            getLatestAnalysisUseCase = GetLatestAnalysisUseCase(fakeHistoryRepo),
             deleteSelectedFilesUseCase = mockUseCase
         )
-        advanceUntilIdle()
-
-        // Populate recommendations via permission granted
-        viewModel.onPermissionGranted()
         advanceUntilIdle()
 
         // Select the item
@@ -489,18 +499,20 @@ class HomeViewModelTest {
         )
         val expectedIntentSender = fakePendingIntent.intentSender
 
+        val testFile = StorageFile(
+            id = 902L,
+            name = "photo_approved.jpg",
+            uri = "content://media/external/files/902",
+            sizeBytes = 4096L,
+            mimeType = "image/jpeg",
+            extension = "jpg",
+            dateModifiedEpochSeconds = 123456L,
+            category = StorageCategory.IMAGES
+        )
+
         val rec = CleanupRecommendation(
             id = 702L,
-            file = StorageFile(
-                id = 902L,
-                name = "photo_approved.jpg",
-                uri = "content://media/external/images/media/902",
-                sizeBytes = 4096L,
-                mimeType = "image/jpeg",
-                extension = "jpg",
-                dateModifiedEpochSeconds = 123456L,
-                category = StorageCategory.IMAGES
-            ),
+            file = testFile,
             type = RecommendationType.TEMPORARY_FILE,
             priority = RecommendationPriority.HIGH,
             score = 90,
@@ -522,22 +534,32 @@ class HomeViewModelTest {
                 directSummary: DeletionSummary
             ): DeletionSummary {
                 return DeletionSummary(
-                    deletedCount = 1,
-                    reclaimedBytes = 4096L,
+                    deletedCount = pendingRecommendations.size,
+                    reclaimedBytes = pendingRecommendations.sumOf { it.reclaimableSizeBytes },
                     failedFileNames = emptyList(),
-                    deletedRecommendationIds = setOf(702L)
+                    deletedRecommendationIds = pendingRecommendations.map { it.id }.toSet()
                 )
             }
         }
 
-        val fakeRepo = FakeRepository(
-            analysisResult = Result.success(
-                StorageAnalysisResult(
-                    totalFilesCount = 1,
-                    totalAnalyzedSizeBytes = 4096L,
-                    categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 4096L)),
-                    files = listOf(rec.file),
-                    deviceStorageStats = DeviceStorageStats(100L, 50L, 50L)
+        val fakeRepo = FakeRepository()
+        val fakeHistoryRepo = FakeHistoryRepository(
+            initialAnalysis = StorageAnalysisResult(
+                totalFilesCount = 1,
+                totalAnalyzedSizeBytes = 4096L,
+                categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 4096L)),
+                files = listOf(testFile),
+                deviceStorageStats = DeviceStorageStats(100L, 50L, 50L),
+                recommendationsSummary = AnalysisRecommendationsSummary(
+                    totalRecommendationsCount = 1,
+                    potentialReclaimableBytes = 4096L,
+                    largeFilesCount = 0,
+                    duplicateFilesCount = 0,
+                    duplicateGroupsCount = 0,
+                    oldFilesCount = 0,
+                    temporaryFilesCount = 1,
+                    recommendations = listOf(rec),
+                    duplicateGroups = emptyList()
                 )
             )
         )
@@ -545,13 +567,11 @@ class HomeViewModelTest {
         val viewModel = HomeViewModel(
             application = application,
             getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
-            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo, fakeHistoryRepo),
             ioDispatcher = testDispatcher,
+            getLatestAnalysisUseCase = GetLatestAnalysisUseCase(fakeHistoryRepo),
             deleteSelectedFilesUseCase = mockUseCase
         )
-        advanceUntilIdle()
-
-        viewModel.onPermissionGranted()
         advanceUntilIdle()
 
         viewModel.onToggleRecommendationSelection(rec.id)
@@ -583,18 +603,20 @@ class HomeViewModelTest {
         )
         val expectedIntentSender = fakePendingIntent.intentSender
 
+        val testFile = StorageFile(
+            id = 903L,
+            name = "photo_refused.jpg",
+            uri = "content://media/external/files/903",
+            sizeBytes = 1024L,
+            mimeType = "image/jpeg",
+            extension = "jpg",
+            dateModifiedEpochSeconds = 123456L,
+            category = StorageCategory.IMAGES
+        )
+
         val rec = CleanupRecommendation(
             id = 703L,
-            file = StorageFile(
-                id = 903L,
-                name = "photo_refused.jpg",
-                uri = "content://media/external/images/media/903",
-                sizeBytes = 1024L,
-                mimeType = "image/jpeg",
-                extension = "jpg",
-                dateModifiedEpochSeconds = 123456L,
-                category = StorageCategory.IMAGES
-            ),
+            file = testFile,
             type = RecommendationType.TEMPORARY_FILE,
             priority = RecommendationPriority.HIGH,
             score = 90,
@@ -612,14 +634,24 @@ class HomeViewModelTest {
             }
         }
 
-        val fakeRepo = FakeRepository(
-            analysisResult = Result.success(
-                StorageAnalysisResult(
-                    totalFilesCount = 1,
-                    totalAnalyzedSizeBytes = 1024L,
-                    categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 1024L)),
-                    files = listOf(rec.file),
-                    deviceStorageStats = DeviceStorageStats(100L, 50L, 50L)
+        val fakeRepo = FakeRepository()
+        val fakeHistoryRepo = FakeHistoryRepository(
+            initialAnalysis = StorageAnalysisResult(
+                totalFilesCount = 1,
+                totalAnalyzedSizeBytes = 1024L,
+                categorySummaries = listOf(CategorySummary(StorageCategory.IMAGES, 1, 1024L)),
+                files = listOf(testFile),
+                deviceStorageStats = DeviceStorageStats(100L, 50L, 50L),
+                recommendationsSummary = AnalysisRecommendationsSummary(
+                    totalRecommendationsCount = 1,
+                    potentialReclaimableBytes = 1024L,
+                    largeFilesCount = 0,
+                    duplicateFilesCount = 0,
+                    duplicateGroupsCount = 0,
+                    oldFilesCount = 0,
+                    temporaryFilesCount = 1,
+                    recommendations = listOf(rec),
+                    duplicateGroups = emptyList()
                 )
             )
         )
@@ -627,13 +659,11 @@ class HomeViewModelTest {
         val viewModel = HomeViewModel(
             application = application,
             getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
-            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo, fakeHistoryRepo),
             ioDispatcher = testDispatcher,
+            getLatestAnalysisUseCase = GetLatestAnalysisUseCase(fakeHistoryRepo),
             deleteSelectedFilesUseCase = mockUseCase
         )
-        advanceUntilIdle()
-
-        viewModel.onPermissionGranted()
         advanceUntilIdle()
 
         viewModel.onToggleRecommendationSelection(rec.id)
