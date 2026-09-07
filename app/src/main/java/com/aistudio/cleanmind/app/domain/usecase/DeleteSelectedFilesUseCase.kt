@@ -1,5 +1,6 @@
 package com.aistudio.cleanmind.app.domain.usecase
 
+import android.annotation.SuppressLint
 import android.app.RecoverableSecurityException
 import android.content.Context
 import android.content.IntentSender
@@ -31,36 +32,42 @@ open class DeleteSelectedFilesUseCase(
         for (rec in recommendations) {
             val uriString = rec.file.uri
             if (uriString.startsWith("content://")) {
-                val uri = Uri.parse(uriString)
-                if (!doesContentUriExist(uri)) {
-                    // File already does not exist in MediaStore
-                    directFailedFiles.add(rec.file.name)
-                    continue
-                }
-
-                var deleted = false
-                var needsAuth = false
-                try {
-                    val deletedRows = context.contentResolver.delete(uri, null, null)
-                    if (deletedRows > 0 && !doesContentUriExist(uri)) {
-                        deleted = true
-                    } else {
-                        needsAuth = true
+                if (sdkVersion >= Build.VERSION_CODES.R) {
+                    val uri = Uri.parse(uriString)
+                    if (!doesContentUriExist(uri)) {
+                        // File already does not exist in MediaStore
+                        directFailedFiles.add(rec.file.name)
+                        continue
                     }
-                } catch (_: SecurityException) {
-                    needsAuth = true
-                } catch (_: Exception) {
-                    needsAuth = false
-                }
 
-                if (deleted) {
-                    directDeletedCount++
-                    directReclaimedBytes += rec.reclaimableSizeBytes
-                    directDeletedIds.add(rec.id)
-                } else if (needsAuth) {
-                    authRequiredRecs.add(rec)
+                    var deleted = false
+                    var needsAuth = false
+                    try {
+                        val deletedRows = deleteContentUri(uri)
+                        if (deletedRows > 0 && !doesContentUriExist(uri)) {
+                            deleted = true
+                        } else {
+                            needsAuth = true
+                        }
+                    } catch (_: SecurityException) {
+                        needsAuth = true
+                    } catch (_: Exception) {
+                        needsAuth = false
+                    }
+
+                    if (deleted) {
+                        directDeletedCount++
+                        directReclaimedBytes += rec.reclaimableSizeBytes
+                        directDeletedIds.add(rec.id)
+                    } else if (needsAuth) {
+                        authRequiredRecs.add(rec)
+                    } else {
+                        directFailedFiles.add(rec.file.name)
+                    }
                 } else {
-                    directFailedFiles.add(rec.file.name)
+                    // Android 29 fallback: delegated directly to requestAuthorization
+                    // to prevent duplicate delete attempts on the same files.
+                    authRequiredRecs.add(rec)
                 }
             } else {
                 // Physical file path or file:// URI
@@ -99,9 +106,11 @@ open class DeleteSelectedFilesUseCase(
             val updatedDirectDeletedCount = directSummary.deletedCount + authResult.directlyDeleted.size
             val updatedDirectReclaimedBytes = directSummary.reclaimedBytes + authResult.directlyDeleted.sumOf { it.reclaimableSizeBytes }
             val updatedDirectDeletedIds = directSummary.deletedRecommendationIds + authResult.directlyDeleted.map { it.id }
+            val updatedFailedFiles = directSummary.failedFileNames + authResult.failedRecommendations.map { it.file.name }
             val updatedDirectSummary = directSummary.copy(
                 deletedCount = updatedDirectDeletedCount,
                 reclaimedBytes = updatedDirectReclaimedBytes,
+                failedFileNames = updatedFailedFiles,
                 deletedRecommendationIds = updatedDirectDeletedIds
             )
 
@@ -112,10 +121,12 @@ open class DeleteSelectedFilesUseCase(
                     directSummary = updatedDirectSummary
                 )
             } else {
-                val actuallyFailed = authRequiredRecs.filterNot { authResult.directlyDeleted.contains(it) }
+                val unhandledBatchRemainder = authRequiredRecs.drop(batchRecommendations.size)
+                val remainingFailures = authResult.pendingRecommendations.map { it.file.name } +
+                    unhandledBatchRemainder.map { it.file.name }
                 return@withContext DeletionResult.Completed(
                     updatedDirectSummary.copy(
-                        failedFileNames = updatedDirectSummary.failedFileNames + actuallyFailed.map { it.file.name }
+                        failedFileNames = updatedDirectSummary.failedFileNames + remainingFailures
                     )
                 )
             }
@@ -124,6 +135,11 @@ open class DeleteSelectedFilesUseCase(
         DeletionResult.Completed(directSummary)
     }
 
+    internal open fun deleteContentUri(uri: Uri): Int {
+        return context.contentResolver.delete(uri, null, null)
+    }
+
+    @SuppressLint("NewApi")
     internal open fun requestAuthorization(
         recommendations: List<CleanupRecommendation>
     ): AuthorizationRequestResult {
@@ -132,16 +148,25 @@ open class DeleteSelectedFilesUseCase(
             return AuthorizationRequestResult(
                 intentSender = intentSender,
                 directlyDeleted = emptyList(),
-                pendingRecommendations = recommendations
+                pendingRecommendations = recommendations,
+                failedRecommendations = emptyList()
             )
         } else if (sdkVersion >= Build.VERSION_CODES.Q) {
             val directlyDeleted = mutableListOf<CleanupRecommendation>()
+            val failed = mutableListOf<CleanupRecommendation>()
             for ((index, rec) in recommendations.withIndex()) {
                 val uri = Uri.parse(rec.file.uri)
+                if (!doesContentUriExist(uri)) {
+                    failed.add(rec)
+                    continue
+                }
+
                 try {
-                    val deletedRows = context.contentResolver.delete(uri, null, null)
+                    val deletedRows = deleteContentUri(uri)
                     if (deletedRows > 0 && !doesContentUriExist(uri)) {
                         directlyDeleted.add(rec)
+                    } else {
+                        failed.add(rec)
                     }
                 } catch (e: RecoverableSecurityException) {
                     val intentSender = e.userAction.actionIntent.intentSender
@@ -149,26 +174,25 @@ open class DeleteSelectedFilesUseCase(
                     return AuthorizationRequestResult(
                         intentSender = intentSender,
                         directlyDeleted = directlyDeleted,
-                        pendingRecommendations = pending
+                        pendingRecommendations = pending,
+                        failedRecommendations = failed
                     )
-                } catch (_: Exception) {}
-            }
-            val fallbackSender = createIntentSenderForAuthorization(recommendations)
-            val remaining = if (fallbackSender != null) {
-                recommendations.filterNot { directlyDeleted.contains(it) }
-            } else {
-                emptyList()
+                } catch (_: Exception) {
+                    failed.add(rec)
+                }
             }
             return AuthorizationRequestResult(
-                intentSender = fallbackSender,
+                intentSender = null,
                 directlyDeleted = directlyDeleted,
-                pendingRecommendations = remaining
+                pendingRecommendations = emptyList(),
+                failedRecommendations = failed
             )
         } else {
             return AuthorizationRequestResult(
                 intentSender = null,
                 directlyDeleted = emptyList(),
-                pendingRecommendations = emptyList()
+                pendingRecommendations = emptyList(),
+                failedRecommendations = recommendations
             )
         }
     }
@@ -233,21 +257,13 @@ open class DeleteSelectedFilesUseCase(
         }
     }
 
+    @SuppressLint("NewApi")
     internal open fun createIntentSenderForAuthorization(recommendations: List<CleanupRecommendation>): IntentSender? {
         return try {
             if (sdkVersion >= Build.VERSION_CODES.R) {
                 val uris = recommendations.take(MAX_BATCH_SIZE).map { Uri.parse(it.file.uri) }
                 val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, uris)
                 pendingIntent.intentSender
-            } else if (sdkVersion >= Build.VERSION_CODES.Q) {
-                for (rec in recommendations) {
-                    try {
-                        context.contentResolver.delete(Uri.parse(rec.file.uri), null, null)
-                    } catch (e: RecoverableSecurityException) {
-                        return e.userAction.actionIntent.intentSender
-                    } catch (_: Exception) {}
-                }
-                null
             } else {
                 null
             }
@@ -260,7 +276,8 @@ open class DeleteSelectedFilesUseCase(
 data class AuthorizationRequestResult(
     val intentSender: IntentSender?,
     val directlyDeleted: List<CleanupRecommendation> = emptyList(),
-    val pendingRecommendations: List<CleanupRecommendation> = emptyList()
+    val pendingRecommendations: List<CleanupRecommendation> = emptyList(),
+    val failedRecommendations: List<CleanupRecommendation> = emptyList()
 )
 
 class PendingAuthorizationException(

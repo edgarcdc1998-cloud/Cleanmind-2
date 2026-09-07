@@ -1,8 +1,12 @@
 package com.aistudio.cleanmind.app.domain.usecase
 
 import android.app.PendingIntent
+import android.app.RecoverableSecurityException
+import android.app.RemoteAction
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.drawable.Icon
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.aistudio.cleanmind.app.domain.model.CleanupRecommendation
@@ -481,13 +485,27 @@ class DeleteSelectedFilesUseCaseTest {
         assertTrue(authResult.directSummary.failedFileNames.isEmpty())
     }
 
+    private fun createRecoverableSecurityException(pendingIntent: PendingIntent): RecoverableSecurityException {
+        val remoteAction = RemoteAction(
+            Icon.createWithBitmap(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)),
+            "Auth Needed",
+            "Authorization is needed to delete this file",
+            pendingIntent
+        )
+        return RecoverableSecurityException(
+            SecurityException("Permission denied by MediaStore"),
+            "Authorization required",
+            remoteAction
+        )
+    }
+
     @Test
     fun execute_android29_itemADeletedDirectly_itemBRequiresRecoverableSecurityException_preservesDirectDeletionAndPendingAuth() = runTest(testDispatcher) {
         val fakeIntent = Intent("action.cleanmind.test")
         val fakePendingIntent = PendingIntent.getBroadcast(
             context, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
         )
-        val expectedIntentSender = fakePendingIntent.intentSender
+        val recoverableException = createRecoverableSecurityException(fakePendingIntent)
 
         val recA = createRecommendation(
             id = 901L,
@@ -519,16 +537,23 @@ class DeleteSelectedFilesUseCaseTest {
             reclaimableBytes = 3500L
         )
 
+        var deletedA = false
         val testUseCase = object : DeleteSelectedFilesUseCase(context, testDispatcher, sdkVersion = 29) {
-            override fun doesContentUriExist(uri: Uri): Boolean = true
-            override fun requestAuthorization(recommendations: List<CleanupRecommendation>): AuthorizationRequestResult {
-                val directlyDeleted = recommendations.filter { it.id == 901L }
-                val pending = recommendations.filter { it.id == 902L }
-                return AuthorizationRequestResult(
-                    intentSender = expectedIntentSender,
-                    directlyDeleted = directlyDeleted,
-                    pendingRecommendations = pending
-                )
+            override fun deleteContentUri(uri: Uri): Int {
+                return when (uri.toString()) {
+                    "content://media/external/images/media/901" -> {
+                        deletedA = true
+                        1
+                    }
+                    "content://media/external/images/media/902" -> throw recoverableException
+                    else -> 0
+                }
+            }
+            override fun doesContentUriExist(uri: Uri): Boolean {
+                return when (uri.toString()) {
+                    "content://media/external/images/media/901" -> !deletedA
+                    else -> true
+                }
             }
         }
 
@@ -536,7 +561,7 @@ class DeleteSelectedFilesUseCaseTest {
         assertTrue("Resultado deve ser RequiresAuthorization", result is DeletionResult.RequiresAuthorization)
 
         val authResult = result as DeletionResult.RequiresAuthorization
-        assertEquals(expectedIntentSender, authResult.intentSender)
+        assertEquals(fakePendingIntent.intentSender, authResult.intentSender)
 
         // Item A must be accounted in directSummary
         assertEquals(1, authResult.directSummary.deletedCount)
@@ -544,9 +569,218 @@ class DeleteSelectedFilesUseCaseTest {
         assertEquals(setOf(901L), authResult.directSummary.deletedRecommendationIds)
         assertFalse("Item A excluído diretamente não deve ser marcado como falha", authResult.directSummary.failedFileNames.contains("file_a_direct.jpg"))
 
-        // Only Item B must be pending in pendingRecommendations
+        // Only Item B must be pending in pendingRecommendations; Item A must not be pending
         assertEquals(1, authResult.pendingRecommendations.size)
         assertEquals(902L, authResult.pendingRecommendations.first().id)
         assertEquals("file_b_recoverable.jpg", authResult.pendingRecommendations.first().file.name)
+        assertFalse(authResult.pendingRecommendations.any { it.id == 901L })
+    }
+
+    @Test
+    fun execute_android29_bothItemsDeletedDirectly_returnsCompletedWithZeroPendingAndNoIntentSender() = runTest(testDispatcher) {
+        val recA = createRecommendation(
+            id = 911L,
+            file = StorageFile(
+                id = 911L,
+                name = "file_a_direct.jpg",
+                uri = "content://media/external/images/media/911",
+                sizeBytes = 1000L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 1000L
+        )
+
+        val recB = createRecommendation(
+            id = 912L,
+            file = StorageFile(
+                id = 912L,
+                name = "file_b_direct.jpg",
+                uri = "content://media/external/images/media/912",
+                sizeBytes = 2000L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 2000L
+        )
+
+        var deletedA = false
+        var deletedB = false
+        val testUseCase = object : DeleteSelectedFilesUseCase(context, testDispatcher, sdkVersion = 29) {
+            override fun deleteContentUri(uri: Uri): Int {
+                return when (uri.toString()) {
+                    "content://media/external/images/media/911" -> {
+                        deletedA = true
+                        1
+                    }
+                    "content://media/external/images/media/912" -> {
+                        deletedB = true
+                        1
+                    }
+                    else -> 0
+                }
+            }
+            override fun doesContentUriExist(uri: Uri): Boolean {
+                return when (uri.toString()) {
+                    "content://media/external/images/media/911" -> !deletedA
+                    "content://media/external/images/media/912" -> !deletedB
+                    else -> true
+                }
+            }
+        }
+
+        val result = testUseCase.execute(listOf(recA, recB))
+        assertTrue("Resultado deve ser Completed", result is DeletionResult.Completed)
+
+        val completed = result as DeletionResult.Completed
+        assertEquals(2, completed.summary.deletedCount)
+        assertEquals(3000L, completed.summary.reclaimedBytes)
+        assertEquals(setOf(911L, 912L), completed.summary.deletedRecommendationIds)
+        assertTrue(completed.summary.failedFileNames.isEmpty())
+    }
+
+    @Test
+    fun execute_android29_itemAFailsWithCommonException_itemBRequiresAuth_reportsFailureAndPendingWithoutFalseSuccess() = runTest(testDispatcher) {
+        val fakeIntent = Intent("action.cleanmind.test")
+        val fakePendingIntent = PendingIntent.getBroadcast(
+            context, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val recoverableException = createRecoverableSecurityException(fakePendingIntent)
+
+        val recA = createRecommendation(
+            id = 921L,
+            file = StorageFile(
+                id = 921L,
+                name = "file_a_error.jpg",
+                uri = "content://media/external/images/media/921",
+                sizeBytes = 1200L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 1200L
+        )
+
+        val recB = createRecommendation(
+            id = 922L,
+            file = StorageFile(
+                id = 922L,
+                name = "file_b_recoverable.jpg",
+                uri = "content://media/external/images/media/922",
+                sizeBytes = 2400L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 2400L
+        )
+
+        val testUseCase = object : DeleteSelectedFilesUseCase(context, testDispatcher, sdkVersion = 29) {
+            override fun deleteContentUri(uri: Uri): Int {
+                return when (uri.toString()) {
+                    "content://media/external/images/media/921" -> throw RuntimeException("Generic database error")
+                    "content://media/external/images/media/922" -> throw recoverableException
+                    else -> 0
+                }
+            }
+            override fun doesContentUriExist(uri: Uri): Boolean = true
+        }
+
+        val result = testUseCase.execute(listOf(recA, recB))
+        assertTrue("Resultado deve ser RequiresAuthorization", result is DeletionResult.RequiresAuthorization)
+
+        val authResult = result as DeletionResult.RequiresAuthorization
+        assertEquals(fakePendingIntent.intentSender, authResult.intentSender)
+
+        // A deve aparecer em failedFileNames; deletedCount deve ser 0
+        assertEquals(0, authResult.directSummary.deletedCount)
+        assertEquals(0L, authResult.directSummary.reclaimedBytes)
+        assertTrue(authResult.directSummary.deletedRecommendationIds.isEmpty())
+        assertTrue("A deve aparecer em failedFileNames", authResult.directSummary.failedFileNames.contains("file_a_error.jpg"))
+
+        // B deve ser pending
+        assertEquals(1, authResult.pendingRecommendations.size)
+        assertEquals(922L, authResult.pendingRecommendations.first().id)
+        assertEquals("file_b_recoverable.jpg", authResult.pendingRecommendations.first().file.name)
+
+        // Nenhum deles pode ser falsamente marcado como excluído
+        assertFalse(authResult.directSummary.deletedRecommendationIds.contains(921L))
+        assertFalse(authResult.directSummary.deletedRecommendationIds.contains(922L))
+    }
+
+    @Test
+    fun execute_android29_recoverableOnFirstItem_allRemainingArePendingAndNoFalseDeletions() = runTest(testDispatcher) {
+        val fakeIntent = Intent("action.cleanmind.test")
+        val fakePendingIntent = PendingIntent.getBroadcast(
+            context, 0, fakeIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val recoverableException = createRecoverableSecurityException(fakePendingIntent)
+
+        val recA = createRecommendation(
+            id = 931L,
+            file = StorageFile(
+                id = 931L,
+                name = "file_a_first.jpg",
+                uri = "content://media/external/images/media/931",
+                sizeBytes = 1800L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 1800L
+        )
+
+        val recB = createRecommendation(
+            id = 932L,
+            file = StorageFile(
+                id = 932L,
+                name = "file_b_second.jpg",
+                uri = "content://media/external/images/media/932",
+                sizeBytes = 2800L,
+                mimeType = "image/jpeg",
+                extension = "jpg",
+                dateModifiedEpochSeconds = 123456L,
+                category = StorageCategory.IMAGES
+            ),
+            reclaimableBytes = 2800L
+        )
+
+        var deleteCallsCount = 0
+        val testUseCase = object : DeleteSelectedFilesUseCase(context, testDispatcher, sdkVersion = 29) {
+            override fun deleteContentUri(uri: Uri): Int {
+                deleteCallsCount++
+                if (uri.toString() == "content://media/external/images/media/931") {
+                    throw recoverableException
+                }
+                return 0
+            }
+            override fun doesContentUriExist(uri: Uri): Boolean = true
+        }
+
+        val result = testUseCase.execute(listOf(recA, recB))
+        assertTrue("Resultado deve ser RequiresAuthorization", result is DeletionResult.RequiresAuthorization)
+
+        val authResult = result as DeletionResult.RequiresAuthorization
+        assertEquals(fakePendingIntent.intentSender, authResult.intentSender)
+
+        // Nenhum item diretamente excluído; directSummary não contém exclusões falsas
+        assertEquals(0, authResult.directSummary.deletedCount)
+        assertEquals(0L, authResult.directSummary.reclaimedBytes)
+        assertTrue(authResult.directSummary.deletedRecommendationIds.isEmpty())
+        assertTrue(authResult.directSummary.failedFileNames.isEmpty())
+
+        // Primeiro item + itens seguintes são pending
+        assertEquals(2, authResult.pendingRecommendations.size)
+        assertEquals(listOf(931L, 932L), authResult.pendingRecommendations.map { it.id })
+
+        // Exclusão parou imediatamente ao encontrar RecoverableSecurityException
+        assertEquals(1, deleteCallsCount)
     }
 }
