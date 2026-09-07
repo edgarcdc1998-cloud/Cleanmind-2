@@ -11,6 +11,8 @@ import com.aistudio.cleanmind.app.R
 import com.aistudio.cleanmind.app.domain.model.BackgroundWorkStatus
 import com.aistudio.cleanmind.app.domain.model.CategorySummary
 import com.aistudio.cleanmind.app.domain.model.DeviceStorageStats
+import com.aistudio.cleanmind.app.data.datasource.MediaStoreDataSourceImpl
+import com.aistudio.cleanmind.app.data.repository.StorageRepositoryImpl
 import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.repository.SettingsRepository
@@ -56,37 +58,48 @@ class HomeViewModel(
     private fun observeSavedAnalysis() {
         val useCase = getLatestAnalysisUseCase ?: return
         viewModelScope.launch(ioDispatcher) {
-            useCase().collect { savedAnalysis ->
-                if (savedAnalysis != null) {
-                    val categoryUis = mapCategorySummaries(savedAnalysis.categorySummaries)
-                    val formattedDate = StorageFormatter.formatTimestamp(savedAnalysis.timestampEpochMillis)
-                    _uiState.update { state ->
-                        state.copy(
-                            status = if (state.status is AnalysisStatus.Idle) {
-                                AnalysisStatus.Saved(formattedDate)
-                            } else if (state.status is AnalysisStatus.Analyzing && state.backgroundWorkStatus == BackgroundWorkStatus.SUCCEEDED) {
-                                AnalysisStatus.Success
-                            } else {
-                                state.status
-                            },
-                            hasSavedAnalysis = true,
-                            lastAnalyzedEpochMillis = savedAnalysis.timestampEpochMillis,
-                            lastAnalyzedDateFormatted = formattedDate,
-                            totalFilesAnalyzed = savedAnalysis.totalFilesCount,
-                            totalAnalyzedSpaceFormatted = StorageFormatter.formatBytes(savedAnalysis.totalAnalyzedSizeBytes),
-                            categories = categoryUis,
-                            recommendationsSummary = savedAnalysis.recommendationsSummary
-                        )
+            try {
+                useCase().collect { savedAnalysis ->
+                    if (savedAnalysis != null) {
+                        val categoryUis = mapCategorySummaries(savedAnalysis.categorySummaries)
+                        val formattedDate = StorageFormatter.formatTimestamp(savedAnalysis.timestampEpochMillis)
+                        _uiState.update { state ->
+                            state.copy(
+                                status = if (state.status is AnalysisStatus.Idle || state.status is AnalysisStatus.Error) {
+                                    AnalysisStatus.Saved(formattedDate)
+                                } else if (state.status is AnalysisStatus.Analyzing && state.backgroundWorkStatus == BackgroundWorkStatus.SUCCEEDED) {
+                                    AnalysisStatus.Success
+                                } else {
+                                    state.status
+                                },
+                                hasSavedAnalysis = true,
+                                lastAnalyzedEpochMillis = savedAnalysis.timestampEpochMillis,
+                                lastAnalyzedDateFormatted = formattedDate,
+                                totalFilesAnalyzed = savedAnalysis.totalFilesCount,
+                                totalAnalyzedSpaceFormatted = StorageFormatter.formatBytes(savedAnalysis.totalAnalyzedSizeBytes),
+                                categories = categoryUis,
+                                recommendationsSummary = savedAnalysis.recommendationsSummary
+                            )
+                        }
+                    } else {
+                        _uiState.update { state ->
+                            state.copy(
+                                hasSavedAnalysis = false,
+                                lastAnalyzedEpochMillis = null,
+                                lastAnalyzedDateFormatted = null,
+                                recommendationsSummary = null
+                            )
+                        }
                     }
-                } else {
-                    _uiState.update { state ->
-                        state.copy(
-                            hasSavedAnalysis = false,
-                            lastAnalyzedEpochMillis = null,
-                            lastAnalyzedDateFormatted = null,
-                            recommendationsSummary = null
+                }
+            } catch (e: Exception) {
+                // Falha no Room / histórico não bloqueia a UI e é propagada para o estado correspondente
+                _uiState.update { state ->
+                    state.copy(
+                        status = AnalysisStatus.PersistenceError(
+                            errorMessage = "Falha ao carregar histórico: ${e.localizedMessage ?: "Erro no banco de dados"}"
                         )
-                    }
+                    )
                 }
             }
         }
@@ -143,8 +156,18 @@ class HomeViewModel(
                         loadDeviceStorageStats()
                     }
                 }
-            } catch (_: Exception) {
-                // WorkManager may not be initialized in some test environments without test helper
+            } catch (e: Exception) {
+                // Falha no WorkManager não bloqueia a UI
+                _uiState.update { state ->
+                    if (state.status is AnalysisStatus.Analyzing) {
+                        state.copy(
+                            backgroundWorkStatus = BackgroundWorkStatus.FAILED,
+                            status = AnalysisStatus.Error("Serviço de análise em segundo plano indisponível: ${e.localizedMessage ?: "WorkManager indisponível"}")
+                        )
+                    } else {
+                        state
+                    }
+                }
             }
         }
     }
@@ -152,28 +175,51 @@ class HomeViewModel(
     private fun observeSettings() {
         val repo = settingsRepository ?: return
         viewModelScope.launch(ioDispatcher) {
-            repo.isAutoAnalysisEnabled().collect { enabled ->
-                _uiState.update { it.copy(isAutoAnalysisEnabled = enabled) }
+            try {
+                repo.isAutoAnalysisEnabled().collect { enabled ->
+                    _uiState.update { it.copy(isAutoAnalysisEnabled = enabled) }
+                }
+            } catch (_: Exception) {
+                // Falha ao observar preferências de análise automática não deve travar a UI
             }
         }
         viewModelScope.launch(ioDispatcher) {
-            repo.getAutoAnalysisIntervalHours().collect { hours ->
-                _uiState.update { it.copy(autoAnalysisIntervalHours = hours) }
+            try {
+                repo.getAutoAnalysisIntervalHours().collect { hours ->
+                    _uiState.update { it.copy(autoAnalysisIntervalHours = hours) }
+                }
+            } catch (_: Exception) {
+                // Falha ao observar preferências de intervalo não deve travar a UI
             }
         }
     }
 
     fun loadDeviceStorageStats() {
         viewModelScope.launch(ioDispatcher) {
-            val stats = getDeviceStorageStatsUseCase()
-            if (stats.totalBytes > 0) {
+            try {
+                val stats = getDeviceStorageStatsUseCase()
+                if (stats.totalBytes > 0) {
+                    _uiState.update { state ->
+                        state.copy(
+                            deviceTotalSpaceFormatted = StorageFormatter.formatBytes(stats.totalBytes),
+                            deviceUsedSpaceFormatted = StorageFormatter.formatBytes(stats.usedBytes),
+                            deviceFreeSpaceFormatted = StorageFormatter.formatBytes(stats.freeBytes),
+                            usedPercentage = stats.usedPercentage
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                // Falha ao carregar estatísticas não bloqueia a UI e é representada no estado
                 _uiState.update { state ->
-                    state.copy(
-                        deviceTotalSpaceFormatted = StorageFormatter.formatBytes(stats.totalBytes),
-                        deviceUsedSpaceFormatted = StorageFormatter.formatBytes(stats.usedBytes),
-                        deviceFreeSpaceFormatted = StorageFormatter.formatBytes(stats.freeBytes),
-                        usedPercentage = stats.usedPercentage
-                    )
+                    if (state.status is AnalysisStatus.Idle) {
+                        state.copy(
+                            status = AnalysisStatus.Error(
+                                errorMessage = "Falha ao carregar dados de armazenamento: ${e.localizedMessage ?: "Erro desconhecido"}"
+                            )
+                        )
+                    } else {
+                        state
+                    }
                 }
             }
         }
@@ -496,16 +542,58 @@ class HomeViewModel(
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    val container = CleanMindApp.getAppContainer(application)
+                    val container = try {
+                        CleanMindApp.getAppContainer(application)
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    val getStatsUseCase = try {
+                        container?.getDeviceStorageStatsUseCase
+                            ?: GetDeviceStorageStatsUseCase(StorageRepositoryImpl(MediaStoreDataSourceImpl(application)))
+                    } catch (_: Exception) {
+                        GetDeviceStorageStatsUseCase(StorageRepositoryImpl(MediaStoreDataSourceImpl(application)))
+                    }
+
+                    val analyzeUseCase = try {
+                        container?.analyzeStorageUseCase
+                            ?: AnalyzeStorageUseCase(StorageRepositoryImpl(MediaStoreDataSourceImpl(application)))
+                    } catch (_: Exception) {
+                        AnalyzeStorageUseCase(StorageRepositoryImpl(MediaStoreDataSourceImpl(application)))
+                    }
+
+                    val getLatestAnalysis = try {
+                        container?.getLatestAnalysisUseCase
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    val clearHistory = try {
+                        container?.clearAnalysisHistoryUseCase
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    val settingsRepo = try {
+                        container?.settingsRepository
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    val deleteFilesUseCase = try {
+                        container?.deleteSelectedFilesUseCase
+                    } catch (_: Exception) {
+                        null
+                    }
 
                     return HomeViewModel(
                         application = application,
-                        getDeviceStorageStatsUseCase = container.getDeviceStorageStatsUseCase,
-                        analyzeStorageUseCase = container.analyzeStorageUseCase,
-                        getLatestAnalysisUseCase = container.getLatestAnalysisUseCase,
-                        clearAnalysisHistoryUseCase = container.clearAnalysisHistoryUseCase,
-                        settingsRepository = container.settingsRepository,
-                        deleteSelectedFilesUseCase = container.deleteSelectedFilesUseCase
+                        getDeviceStorageStatsUseCase = getStatsUseCase,
+                        analyzeStorageUseCase = analyzeUseCase,
+                        getLatestAnalysisUseCase = getLatestAnalysis,
+                        clearAnalysisHistoryUseCase = clearHistory,
+                        settingsRepository = settingsRepo,
+                        deleteSelectedFilesUseCase = deleteFilesUseCase
                     ) as T
                 }
             }

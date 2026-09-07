@@ -14,6 +14,7 @@ import com.aistudio.cleanmind.app.domain.model.StorageAnalysisResult
 import com.aistudio.cleanmind.app.domain.model.StorageCategory
 import com.aistudio.cleanmind.app.domain.model.StorageFile
 import com.aistudio.cleanmind.app.domain.repository.AnalysisHistoryRepository
+import com.aistudio.cleanmind.app.domain.repository.SettingsRepository
 import com.aistudio.cleanmind.app.domain.repository.StorageRepository
 import com.aistudio.cleanmind.app.domain.usecase.AnalyzeStorageUseCase
 import com.aistudio.cleanmind.app.domain.usecase.GetDeviceStorageStatsUseCase
@@ -28,6 +29,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -813,5 +815,218 @@ class HomeViewModelTest {
         assertEquals(2000L, state.deletionSummary?.reclaimedBytes)
         // Only B is listed in failed/unauthorized files; A must NEVER be reported as failed
         assertEquals(listOf("file_b_protected.jpg"), state.deletionSummary?.failedFileNames)
+    }
+
+    // =========================================================================
+    // REGRESSION TESTS: STARTUP / ANDROID 13 P0
+    // =========================================================================
+
+    @Test
+    fun startup_homeViewModelCreated_doesNotBlockFirstUi() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher
+        )
+
+        // Initial UI state is immediately available synchronously without blocking
+        val initialState = viewModel.uiState.value
+        assertNotNull(initialState)
+        assertEquals(AnalysisStatus.Idle, initialState.status)
+        assertFalse(initialState.isAnalyzing)
+
+        advanceUntilIdle()
+
+        // State successfully updated with device stats without freezing
+        val loadedState = viewModel.uiState.value
+        assertNotNull(loadedState.deviceTotalSpaceFormatted)
+    }
+
+    @Test
+    fun startup_storageStatsFailure_doesNotBlockUiAndPreservesFunctionalState() = runTest(testDispatcher) {
+        val failingRepo = object : StorageRepository {
+            override suspend fun getDeviceStorageStats(): DeviceStorageStats {
+                throw RuntimeException("Simulated disk error in StatFs")
+            }
+            override suspend fun analyzeStorage(): Result<StorageAnalysisResult> = Result.failure(Exception())
+        }
+
+        // Must not throw during construction
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(failingRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(failingRepo),
+            ioDispatcher = testDispatcher
+        )
+
+        // UI state is available immediately
+        assertNotNull(viewModel.uiState.value)
+
+        advanceUntilIdle()
+
+        // UI is not blocked, error is captured gracefully
+        val state = viewModel.uiState.value
+        assertNotNull(state)
+        assertTrue(state.status is AnalysisStatus.Error)
+        val errorMsg = (state.status as AnalysisStatus.Error).errorMessage
+        assertTrue(errorMsg.contains("Falha ao carregar dados de armazenamento"))
+    }
+
+    @Test
+    fun startup_workManagerFailure_doesNotBlockUi() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher
+        )
+
+        advanceUntilIdle()
+
+        // Background observing with WorkManager (even if not configured in test) does not block UI
+        val state = viewModel.uiState.value
+        assertNotNull(state)
+        assertFalse(state.isAnalyzing)
+    }
+
+    @Test
+    fun startup_historyFailure_doesNotBlockUiAndReportsPersistenceError() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val failingHistoryRepo = object : AnalysisHistoryRepository {
+            override fun getLatestAnalysis(): Flow<StorageAnalysisResult?> = flow {
+                throw IllegalStateException("Simulated SQLite table corruption")
+            }
+            override suspend fun saveAnalysis(result: StorageAnalysisResult): Result<Long> = Result.success(1L)
+            override fun getFilesForAnalysis(analysisId: Long): Flow<List<StorageFile>> = flow { emit(emptyList()) }
+            override suspend fun clearHistory(): Result<Unit> = Result.success(Unit)
+        }
+
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher,
+            getLatestAnalysisUseCase = GetLatestAnalysisUseCase(failingHistoryRepo)
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNotNull(state)
+        // Persistence error state is accurately reported without crashing
+        assertTrue("Histórico com falha deve reportar PersistenceError", state.status is AnalysisStatus.PersistenceError)
+        val errorMsg = (state.status as AnalysisStatus.PersistenceError).errorMessage
+        assertTrue(errorMsg.contains("Falha ao carregar histórico"))
+    }
+
+    @Test
+    fun startup_settingsFailure_doesNotBlockUi() = runTest(testDispatcher) {
+        val fakeRepo = FakeRepository()
+        val failingSettingsRepo = object : SettingsRepository {
+            override fun isAutoAnalysisEnabled(): Flow<Boolean> = flow {
+                throw RuntimeException("Simulated SharedPreferences read failure")
+            }
+            override suspend fun setAutoAnalysisEnabled(enabled: Boolean) {}
+            override fun getAutoAnalysisIntervalHours(): Flow<Int> = flow {
+                throw RuntimeException("Simulated SharedPreferences interval read failure")
+            }
+            override suspend fun setAutoAnalysisIntervalHours(hours: Int) {}
+        }
+
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher,
+            settingsRepository = failingSettingsRepo
+        )
+
+        advanceUntilIdle()
+
+        // UI state remains valid with defaults and does not crash
+        val state = viewModel.uiState.value
+        assertNotNull(state)
+        assertFalse(state.isAutoAnalysisEnabled)
+        assertEquals(24, state.autoAnalysisIntervalHours)
+    }
+
+    @Test
+    fun startup_errorStatesAreCorrectlyRepresented() = runTest(testDispatcher) {
+        // 1. Verify storage stats error sets AnalysisStatus.Error
+        val failingRepo = object : StorageRepository {
+            override suspend fun getDeviceStorageStats(): DeviceStorageStats {
+                throw SecurityException("Permission denied to stat storage")
+            }
+            override suspend fun analyzeStorage(): Result<StorageAnalysisResult> = Result.failure(Exception())
+        }
+        val viewModel1 = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(failingRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(failingRepo),
+            ioDispatcher = testDispatcher
+        )
+        advanceUntilIdle()
+        assertTrue(viewModel1.uiState.value.status is AnalysisStatus.Error)
+        assertFalse(viewModel1.uiState.value.status is AnalysisStatus.Success)
+
+        // 2. Verify history error sets AnalysisStatus.PersistenceError
+        val fakeRepo = FakeRepository()
+        val failingHistoryRepo = object : AnalysisHistoryRepository {
+            override fun getLatestAnalysis(): Flow<StorageAnalysisResult?> = flow {
+                throw android.database.sqlite.SQLiteException("Database locked")
+            }
+            override suspend fun saveAnalysis(result: StorageAnalysisResult): Result<Long> = Result.success(1L)
+            override fun getFilesForAnalysis(analysisId: Long): Flow<List<StorageFile>> = flow { emit(emptyList()) }
+            override suspend fun clearHistory(): Result<Unit> = Result.success(Unit)
+        }
+        val viewModel2 = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(fakeRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(fakeRepo),
+            ioDispatcher = testDispatcher,
+            getLatestAnalysisUseCase = GetLatestAnalysisUseCase(failingHistoryRepo)
+        )
+        advanceUntilIdle()
+        assertTrue(viewModel2.uiState.value.status is AnalysisStatus.PersistenceError)
+        assertFalse(viewModel2.uiState.value.status is AnalysisStatus.Success)
+    }
+
+    @Test
+    fun startup_noStorageAnalysisIsTriggeredAutomatically() = runTest(testDispatcher) {
+        var analyzeStorageCallCount = 0
+        val trackingRepo = object : StorageRepository {
+            override suspend fun getDeviceStorageStats(): DeviceStorageStats =
+                DeviceStorageStats(100L * 1024, 60L * 1024, 40L * 1024)
+
+            override suspend fun analyzeStorage(): Result<StorageAnalysisResult> {
+                analyzeStorageCallCount++
+                return Result.success(
+                    StorageAnalysisResult(
+                        totalFilesCount = 0,
+                        totalAnalyzedSizeBytes = 0L,
+                        categorySummaries = emptyList(),
+                        files = emptyList(),
+                        deviceStorageStats = DeviceStorageStats(100L, 50L, 50L)
+                    )
+                )
+            }
+        }
+
+        val viewModel = HomeViewModel(
+            application = application,
+            getDeviceStorageStatsUseCase = GetDeviceStorageStatsUseCase(trackingRepo),
+            analyzeStorageUseCase = AnalyzeStorageUseCase(trackingRepo),
+            ioDispatcher = testDispatcher
+        )
+
+        advanceUntilIdle()
+
+        // Critical: storage analysis must NOT be run automatically during creation
+        assertEquals("Nenhuma análise de armazenamento deve ser iniciada automaticamente na inicialização", 0, analyzeStorageCallCount)
+        assertFalse(viewModel.uiState.value.isAnalyzing)
+        assertFalse(viewModel.uiState.value.status is AnalysisStatus.Analyzing)
     }
 }
